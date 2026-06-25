@@ -25,12 +25,11 @@ jobs:
             echo "::warning::Release tag (${tag}) does not match manifest version (${manifest_version})"
           fi
 
-      - name: Create integration zip
+      - name: Build and upload integration zip
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cd custom_components/alexa_media
-          zip -r "${{ github.workspace }}/alexa_media.zip" .
-
-      - name: Upload zip to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: alexa_media.zip
+          zip -r "${{ github.workspace }}/alexa_media.zip" . -x '*__pycache__*'
+          cd "${{ github.workspace }}"
+          gh release upload "${GITHUB_REF_NAME}" alexa_media.zip --clobber
