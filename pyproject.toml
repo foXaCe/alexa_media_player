@@ -39,4 +39,7 @@ ignore-words-list = "hass"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 python_files = ["test_*.py", "*_tests.py"]
+# Make the repo root importable (custom_components.*) when running bare `pytest`,
+# matching how CI invokes it (no editable install / no `python -m`).
+pythonpath = ["."]
 addopts = "--cov=custom_components/alexa_media --cov-report=term-missing"
