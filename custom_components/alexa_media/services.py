@@ -8,9 +8,10 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from alexapy import AlexaAPI, AlexapyLoginError, hide_email
 from alexapy.errors import AlexapyConnectionError

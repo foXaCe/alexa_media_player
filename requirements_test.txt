@@ -1,0 +1,15 @@
+# Runtime dependencies (mirror of custom_components/alexa_media/manifest.json)
+# so the integration is importable during tests.
+alexapy==1.29.22
+aiohttp>=3.8.1
+packaging>=20.3
+wrapt>=1.12.1
+dictor>=0.1.12,<0.2
+
+# Test framework
+homeassistant>=2025.2.0
+pytest-homeassistant-custom-component>=0.13.107
+pytest>6.2.2
+pytest-cov
+pytest-timeout
+pytest-xdist

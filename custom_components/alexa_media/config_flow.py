@@ -14,7 +14,7 @@ from datetime import timedelta
 from functools import reduce
 import html as html_lib
 import logging
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from aiohttp import ClientConnectionError, ClientSession, InvalidURL, web, web_response
@@ -123,7 +123,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
     def __init__(self):
         """Initialize the config flow."""
         self.login = None
-        self.securitycode: Optional[str] = None
+        self.securitycode: str | None = None
         self.automatic_steps: int = 0
         self.config = OrderedDict()
         self.proxy_schema = None

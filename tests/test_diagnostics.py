@@ -99,6 +99,7 @@ def test_find_coordinators_finds_nested_coordinator(mock_hass):
     coordinator = DataUpdateCoordinator(
         mock_hass,
         logger=logging.getLogger(__name__),
+        config_entry=None,
         name="test",
         update_interval=timedelta(seconds=30),
     )
@@ -114,6 +115,7 @@ def test_summarize_coordinator_error_handling(mock_hass):
     coordinator = DataUpdateCoordinator(
         mock_hass,
         logger=logging.getLogger(__name__),
+        config_entry=None,
         name="test",
         update_interval=timedelta(seconds=30),
     )

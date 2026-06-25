@@ -19,4 +19,4 @@ RUN \
 
 
 RUN \
-    pipx install poetry 
+    pipx install prek

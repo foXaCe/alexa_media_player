@@ -8,10 +8,11 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 """
 
 import asyncio
+from collections.abc import Callable
 import functools
 import hashlib
 import logging
-from typing import Any, Callable, Optional, TypeVar, overload
+from typing import Any, TypeVar, overload
 
 from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
 from alexapy.alexalogin import AlexaLogin
@@ -474,8 +475,8 @@ async def calculate_uuid(hass, email: str, url: str) -> dict:
 
 def alarm_just_dismissed(
     alarm: dict[str, Any],
-    previous_status: Optional[str],
-    previous_version: Optional[str],
+    previous_status: str | None,
+    previous_version: str | None,
 ) -> bool:
     """Given the previous state of an alarm, determine if it has just been dismissed."""
 

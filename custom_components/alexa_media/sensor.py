@@ -7,9 +7,10 @@ For more details about this platform, please refer to the documentation at
 https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers-needed/58639
 """
 
+from collections.abc import Callable
 import datetime
 import logging
-from typing import Callable, ClassVar, Optional
+from typing import ClassVar
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -54,7 +55,7 @@ from .helpers import add_devices, alarm_just_dismissed, is_http2_enabled, safe_g
 
 _LOGGER = logging.getLogger(__name__)
 
-LOCAL_TIMEZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+LOCAL_TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
@@ -349,7 +350,7 @@ class TemperatureSensor(SensorEntity, CoordinatorEntity):
         name,
         device_ident,
         *,
-        device_serial: Optional[str] = None,
+        device_serial: str | None = None,
         debug: bool = False,
     ):
         """Initialize temperature sensor."""
@@ -362,7 +363,7 @@ class TemperatureSensor(SensorEntity, CoordinatorEntity):
         self._attr_unique_id = entity_id + "_temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        value_and_scale: Optional[dict] = parse_temperature_from_coordinator(
+        value_and_scale: dict | None = parse_temperature_from_coordinator(
             coordinator, entity_id, debug=self._debug
         )
         self._attr_native_value = self._get_temperature_value(value_and_scale)
@@ -460,7 +461,7 @@ class AirQualitySensor(SensorEntity, CoordinatorEntity):
         instance,
         unit,
         *,
-        device_serial: Optional[str] = None,
+        device_serial: str | None = None,
         debug: bool = False,
     ):
         super().__init__(coordinator)
@@ -479,13 +480,13 @@ class AirQualitySensor(SensorEntity, CoordinatorEntity):
         ).strip()
         self._attr_device_class = ALEXA_AIR_QUALITY_DEVICE_CLASS.get(sensor_name)
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_value: Optional[int | float | str] = (
+        self._attr_native_value: int | float | str | None = (
             parse_air_quality_from_coordinator(
                 coordinator, entity_id, instance, debug=self._debug
             )
         )
-        self._attr_native_unit_of_measurement: Optional[str] = (
-            ALEXA_UNIT_CONVERSION.get(unit)
+        self._attr_native_unit_of_measurement: str | None = ALEXA_UNIT_CONVERSION.get(
+            unit
         )
         self._attr_unique_id = (
             entity_id + "_" + self._sensor_name.replace(" ", "_").lower()
@@ -578,7 +579,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
         self._debug = bool(debug)
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
         self._attr_state_class = None
-        self._attr_native_value: Optional[datetime.datetime] = None
+        self._attr_native_value: datetime.datetime | None = None
         self._attr_unique_id = f"{client.unique_id}_{name}"
         self._attr_icon = icon
         self._attr_device_info = {
@@ -593,16 +594,16 @@ class AlexaMediaNotificationSensor(SensorEntity):
         self._type = "" if not self._type else self._type
         self._all = []
         self._active = []
-        self._next: Optional[dict] = None
+        self._next: dict | None = None
         self._prior_value = None
-        self._timestamp: Optional[datetime.datetime] = None
-        self._tracker: Optional[Callable] = None
-        self._dismissed: Optional[datetime.datetime] = None
-        self._status: Optional[str] = None
-        self._amz_id: Optional[str] = None
-        self._version: Optional[str] = None
+        self._timestamp: datetime.datetime | None = None
+        self._tracker: Callable | None = None
+        self._dismissed: datetime.datetime | None = None
+        self._status: str | None = None
+        self._amz_id: str | None = None
+        self._version: str | None = None
 
-    def _coerce_datetime(self, value) -> Optional[datetime.datetime]:
+    def _coerce_datetime(self, value) -> datetime.datetime | None:
         """Best-effort conversion of Alexa datetime-ish values to aware datetime."""
 
         def _ensure_aware(parsed: datetime.datetime) -> datetime.datetime:
@@ -1014,7 +1015,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
         """Return the polling state."""
         return not is_http2_enabled(self.hass, self._account)
 
-    def _process_state(self, value) -> Optional[datetime.datetime]:
+    def _process_state(self, value) -> datetime.datetime | None:
         return dt.as_local(value[self._sensor_property]) if value else None
 
     async def async_update(self):
@@ -1177,7 +1178,7 @@ class TimerSensor(AlexaMediaNotificationSensor):
             debug=debug,
         )
 
-    def _process_state(self, value) -> Optional[datetime.datetime]:
+    def _process_state(self, value) -> datetime.datetime | None:
         return (
             dt.as_local(
                 super()._round_time(
@@ -1190,7 +1191,7 @@ class TimerSensor(AlexaMediaNotificationSensor):
         )
 
     @property
-    def paused(self) -> Optional[bool]:
+    def paused(self) -> bool | None:
         """Return the paused state of the sensor."""
         return self._next.get("status") == "PAUSED" if self._next else None
 
@@ -1235,7 +1236,7 @@ class ReminderSensor(AlexaMediaNotificationSensor):
             debug=debug,
         )
 
-    def _process_state(self, value) -> Optional[datetime.datetime]:
+    def _process_state(self, value) -> datetime.datetime | None:
         return (
             dt.as_local(
                 super()._round_time(

@@ -7,12 +7,12 @@ instead of the legacy hass.data[DOMAIN] pattern.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     DEFAULT_EXTENDED_ENTITY_DISCOVERY,

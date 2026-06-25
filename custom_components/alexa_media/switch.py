@@ -67,8 +67,11 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
                 hide_serial(key),
             )
             raise ConfigEntryNotReady
-        if key not in (
-            hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["switch"]
+        if (
+            key
+            not in (
+                hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["switch"]
+            )
         ):
             hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["switch"][
                 key
@@ -91,9 +94,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
                         hide_serial(key),
                     )
                     continue
-                alexa_client = class_(
-                    account_dict["entities"]["media_player"][key]
-                )  # type: AlexaMediaSwitch
+                alexa_client = class_(account_dict["entities"]["media_player"][key])  # type: AlexaMediaSwitch
                 _LOGGER.debug(
                     "%s: Found %s %s switch with status: %s",
                     hide_email(account),
@@ -362,8 +363,9 @@ class DNDSwitch(AlexaMediaSwitch):
         if "dnd_update" in event:
             result = list(
                 filter(
-                    lambda x: x["deviceSerialNumber"]
-                    == self._client.device_serial_number,
+                    lambda x: (
+                        x["deviceSerialNumber"] == self._client.device_serial_number
+                    ),
                     event["dnd_update"],
                 )
             )
@@ -482,7 +484,7 @@ class SmartSwitch(CoordinatorEntity, SwitchDevice):
 
         self._requested_power = power_on
         self._requested_state_at = datetime.datetime.now(
-            datetime.timezone.utc
+            datetime.UTC
         )  # must be set last so that previous getters work properly
         self.schedule_update_ha_state()
 

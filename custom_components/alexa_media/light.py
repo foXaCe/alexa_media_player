@@ -10,7 +10,6 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 import datetime
 import logging
 from math import sqrt
-from typing import Optional
 
 from alexapy import AlexaAPI, hide_serial
 from homeassistant.components.light import (
@@ -47,7 +46,7 @@ from .helpers import add_devices, safe_get
 
 _LOGGER = logging.getLogger(__name__)
 
-LOCAL_TIMEZONE = datetime.datetime.now(datetime.timezone.utc).astimezone().tzinfo
+LOCAL_TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
@@ -272,7 +271,7 @@ class AlexaLight(CoordinatorEntity, LightEntity):
         else:
             self._requested_hs = self.hs_color
         self._requested_state_at = datetime.datetime.now(
-            datetime.timezone.utc
+            datetime.UTC
         )  # must be set last so that previous getters work properly
         self.schedule_update_ha_state()
 
@@ -307,7 +306,7 @@ class AlexaLight(CoordinatorEntity, LightEntity):
         await self._set_state(False)
 
 
-def kelvin_to_alexa(kelvin: Optional[float]) -> tuple[Optional[float], Optional[str]]:
+def kelvin_to_alexa(kelvin: float | None) -> tuple[float | None, str | None]:
     """Convert a given color temperature in kelvin to the closest available value that Alexa has support for."""
     if kelvin is None:
         return None, None
@@ -322,12 +321,12 @@ def kelvin_to_alexa(kelvin: Optional[float]) -> tuple[Optional[float], Optional[
     return 6500, "cool_white"
 
 
-def ha_brightness_to_alexa(ha_brightness: Optional[float]) -> Optional[float]:
+def ha_brightness_to_alexa(ha_brightness: float | None) -> float | None:
     """Convert HA brightness to alexa brightness."""
     return (ha_brightness / 255 * 100) if ha_brightness is not None else None
 
 
-def alexa_brightness_to_ha(alexa: Optional[float]) -> Optional[float]:
+def alexa_brightness_to_ha(alexa: float | None) -> float | None:
     """Convert Alexa brightness to HA brightness."""
     return (alexa / 100 * 255) if alexa is not None else None
 
@@ -500,7 +499,7 @@ def alexa_color_name_to_rgb(color_name: str) -> tuple[int, int, int]:
 
 def rgb_to_alexa_color(
     rgb: tuple[int, int, int],
-) -> tuple[Optional[tuple[float, float]], Optional[str]]:
+) -> tuple[tuple[float, float] | None, str | None]:
     """Convert a given RGB value into the closest Alexa color."""
     name, alexa_rgb = min(
         ALEXA_COLORS.items(),
@@ -511,8 +510,8 @@ def rgb_to_alexa_color(
 
 
 def hs_to_alexa_color(
-    hs_color: Optional[tuple[float, float]],
-) -> tuple[Optional[tuple[float, float]], Optional[str]]:
+    hs_color: tuple[float, float] | None,
+) -> tuple[tuple[float, float] | None, str | None]:
     """Convert a given hue/saturation value into the closest Alexa color."""
     if hs_color is None:
         return None, None
@@ -521,8 +520,8 @@ def hs_to_alexa_color(
 
 
 def hsb_to_alexa_color(
-    hsb: Optional[tuple[float, float, float]],
-) -> tuple[Optional[tuple[float, float]], Optional[str]]:
+    hsb: tuple[float, float, float] | None,
+) -> tuple[tuple[float, float] | None, str | None]:
     """Convert a given hue/saturation/brightness value into the closest Alexa color."""
     if hsb is None:
         return None, None

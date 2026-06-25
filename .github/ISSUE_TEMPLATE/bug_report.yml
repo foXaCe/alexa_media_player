@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **IMPORTANT: Please search the issues, including closed issues, and the [FAQ](https://github.com/alandtse/alexa_media_player/wiki/FAQ) before opening a new issue. The template is mandatory; failure to use it will result in issue closure.**
+        **IMPORTANT: Please search the issues, including closed issues, and the [FAQ](https://github.com/foXaCe/alexa_media_player/wiki/FAQ) before opening a new issue. The template is mandatory; failure to use it will result in issue closure.**
 
   - type: textarea
     id: description
@@ -79,7 +79,7 @@ body:
     id: two-factor
     attributes:
       label: Have you entered a 52-character key for Amazon 2SV via Authenticator App login?
-      description: "Your preferred method must be via Authenticator App. No help will be provided for any issues if you attempt to configure otherwise.\nSee [Enable Two-Step Verification for your Amazon account](https://github.com/alandtse/alexa_media_player/wiki/Configuration#enable-two-step-verification-for-your-amazon-account)"
+      description: "Your preferred method must be via Authenticator App. No help will be provided for any issues if you attempt to configure otherwise.\nSee [Enable Two-Step Verification for your Amazon account](https://github.com/foXaCe/alexa_media_player/wiki/Configuration#enable-two-step-verification-for-your-amazon-account)"
       options:
         - "No"
         - "Yes"
@@ -134,7 +134,7 @@ body:
     attributes:
       label: Debug Logs (alexa_media & alexapy)
       description: |
-        Please provide [logs](https://github.com/alandtse/alexa_media_player/wiki/FAQ#how-do-i-enable-debug-logging-for-the-component) if this is a functional issue.
+        Please provide [logs](https://github.com/foXaCe/alexa_media_player/wiki/FAQ#how-do-i-enable-debug-logging-for-the-component) if this is a functional issue.
         Logs are especially helpful for login issues, device discovery problems, or unexpected errors.
         For large logs, you can drag-and-drop a file here or use a pastebin service.
       placeholder: Paste relevant log excerpts here, or attach log file
