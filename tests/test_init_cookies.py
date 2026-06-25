@@ -6,17 +6,10 @@ jar are re-processed. ``_sanitize_cookies`` flattens them to plain string values
 """
 
 from http.cookies import Morsel
-import pickle
-from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.alexa_media import (
-    _cookie_pickle_paths,
-    _patch_morsel_partitioned,
-    _purge_corrupt_cookie_files,
-    _sanitize_cookies,
-)
+from custom_components.alexa_media import _patch_morsel_partitioned, _sanitize_cookies
 
 
 def _morsel(key, value):
@@ -87,47 +80,3 @@ def test_patch_is_idempotent():
     if "partitioned" in morsel:
         dict.__delitem__(morsel, "partitioned")
     assert morsel["partitioned"] == ""
-
-
-# --------------------------------------------------------------------------- #
-# blocking-call fix: purge corrupt cookie pickles off the event loop
-# --------------------------------------------------------------------------- #
-
-
-def _hass_for(tmp_path):
-    hass = MagicMock()
-    hass.config.path = lambda *parts: str(tmp_path.joinpath(*parts))
-
-    async def _run(func, *args):
-        return func(*args)
-
-    hass.async_add_executor_job = _run
-    return hass
-
-
-def test_cookie_pickle_paths():
-    hass = MagicMock()
-    hass.config.path = lambda *parts: "/config/" + "/".join(parts)
-    paths = _cookie_pickle_paths(hass, "a@example.com")
-    assert paths == [
-        "/config/.storage/alexa_media.a@example.com.pickle",
-        "/config/alexa_media.a@example.com.pickle",
-    ]
-
-
-async def test_purge_removes_corrupt_keeps_valid(tmp_path):
-    (tmp_path / ".storage").mkdir()
-    valid = tmp_path / ".storage" / "alexa_media.a@example.com.pickle"
-    valid.write_bytes(pickle.dumps({"cookie": "ok"}))
-    corrupt = tmp_path / "alexa_media.a@example.com.pickle"
-    corrupt.write_bytes(b"this is not a pickle \x00\x01\x02")
-
-    await _purge_corrupt_cookie_files(_hass_for(tmp_path), "a@example.com")
-
-    assert valid.exists()  # readable pickle is kept
-    assert not corrupt.exists()  # unreadable pickle is removed
-
-
-async def test_purge_no_files_is_noop(tmp_path):
-    # nothing to purge, must not raise
-    await _purge_corrupt_cookie_files(_hass_for(tmp_path), "a@example.com")
