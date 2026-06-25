@@ -91,6 +91,10 @@ TRANSPORT_FEATURES: dict[str, MediaPlayerEntityFeature] = {
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are refreshed through the shared coordinator/dispatcher rather than
+# per-entity polling, so updates can run unbounded in parallel.
+PARALLEL_UPDATES = 0
+
 DEPENDENCIES = [ALEXA_DOMAIN]
 
 

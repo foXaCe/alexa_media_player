@@ -55,6 +55,10 @@ from .helpers import add_devices, alarm_just_dismissed, is_http2_enabled, safe_g
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are refreshed through the shared coordinator/dispatcher rather than
+# per-entity polling, so updates can run unbounded in parallel.
+PARALLEL_UPDATES = 0
+
 LOCAL_TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
 
 

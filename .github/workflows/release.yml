@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and attach release asset
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check manifest version matches the release tag
+        continue-on-error: true
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest_version="$(python -c "import json; print(json.load(open('custom_components/alexa_media/manifest.json'))['version'])")"
+          echo "Release tag: ${tag} / manifest version: ${manifest_version}"
+          if [ "${tag}" != "${manifest_version}" ]; then
+            echo "::warning::Release tag (${tag}) does not match manifest version (${manifest_version})"
+          fi
+
+      - name: Create integration zip
+        run: |
+          cd custom_components/alexa_media
+          zip -r "${{ github.workspace }}/alexa_media.zip" .
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: alexa_media.zip

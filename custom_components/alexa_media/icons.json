@@ -1,0 +1,73 @@
+{
+  "entity": {
+    "switch": {
+      "do_not_disturb": {
+        "default": "mdi:bell",
+        "state": {
+          "on": "mdi:bell-off",
+          "off": "mdi:bell"
+        }
+      },
+      "shuffle": {
+        "default": "mdi:shuffle-disabled",
+        "state": {
+          "on": "mdi:shuffle",
+          "off": "mdi:shuffle-disabled"
+        }
+      },
+      "repeat": {
+        "default": "mdi:repeat-off",
+        "state": {
+          "on": "mdi:repeat",
+          "off": "mdi:repeat-off"
+        }
+      }
+    },
+    "sensor": {
+      "air_quality": {
+        "default": "mdi:air-filter"
+      },
+      "air_quality_carbon_monoxide": {
+        "default": "mdi:molecule-co"
+      },
+      "air_quality_humidity": {
+        "default": "mdi:water-percent"
+      },
+      "air_quality_indoor_air_quality": {
+        "default": "mdi:air-filter"
+      },
+      "air_quality_particulate_matter": {
+        "default": "mdi:grain"
+      },
+      "air_quality_volatile_organic_compounds": {
+        "default": "mdi:molecule"
+      },
+      "next_alarm": {
+        "default": "mdi:alarm"
+      },
+      "next_timer": {
+        "default": "mdi:timer-outline"
+      },
+      "next_reminder": {
+        "default": "mdi:reminder"
+      }
+    }
+  },
+  "services": {
+    "force_logout": {
+      "service": "mdi:logout"
+    },
+    "restore_volume": {
+      "service": "mdi:volume-high"
+    },
+    "get_history_records": {
+      "service": "mdi:history"
+    },
+    "update_last_called": {
+      "service": "mdi:update"
+    },
+    "enable_network_discovery": {
+      "service": "mdi:lan-connect"
+    }
+  }
+}
