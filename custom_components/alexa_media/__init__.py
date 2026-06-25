@@ -13,7 +13,6 @@ from http.cookies import Morsel
 from json import JSONDecodeError, loads
 import logging
 import os
-import pickle
 import random
 import time
 from urllib.parse import urlparse
@@ -481,49 +480,6 @@ def _sanitize_cookies(cookies):
     }
 
 
-def _cookie_pickle_paths(hass, email: str) -> list[str]:
-    """Return the cookie ``.pickle`` paths AlexaLogin may try to load."""
-    return [
-        hass.config.path(".storage", f"{DOMAIN}.{email}.pickle"),
-        hass.config.path(f"{DOMAIN}.{email}.pickle"),
-    ]
-
-
-async def _purge_corrupt_cookie_files(hass, email: str) -> None:
-    """Delete unreadable cookie pickles off the event loop.
-
-    ``AlexaLogin.load_cookie()`` reads each cookie file with an async pickle
-    load and, on failure, falls back to a synchronous ``MozillaCookieJar.load()``
-    that opens the file in the event loop -- which Home Assistant 2026.7 flags as
-    a blocking call. A corrupt ``.pickle`` (e.g. left behind by a previously
-    failed save) triggers that fallback on every setup. Validating the pickles in
-    an executor and removing the broken ones keeps alexapy on its async path; a
-    fresh login via the refresh token then rewrites a valid cookie file.
-    """
-    paths = _cookie_pickle_paths(hass, email)
-
-    def _validate_and_purge() -> None:
-        for path in paths:
-            if not os.path.exists(path):
-                continue
-            try:
-                with open(path, "rb") as handle:
-                    pickle.loads(handle.read())
-            except Exception as err:  # noqa: BLE001 - any load failure -> purge
-                try:
-                    os.remove(path)
-                    _LOGGER.warning(
-                        "Removed unreadable cookie file %s (%s); a fresh login "
-                        "will recreate it",
-                        path,
-                        type(err).__name__,
-                    )
-                except OSError:
-                    pass
-
-    await hass.async_add_executor_job(_validate_and_purge)
-
-
 async def async_setup(hass, config):
     """Set up the Alexa domain."""
     # Initialize metrics
@@ -891,10 +847,6 @@ async def async_setup_entry(hass, config_entry):
     hass.bus.async_listen("alexa_media_relogin_success", login_success)
     try:
         _t = time.monotonic()
-        # Drop unreadable cookie pickles first so alexapy's load_cookie() never
-        # falls back to a synchronous MozillaCookieJar.load() in the event loop
-        # (HA 2026.7 blocking-call warning).
-        await _purge_corrupt_cookie_files(hass, email)
         cookies = _sanitize_cookies(await login.load_cookie())
         cookie_login_ok = False
         if cookies:
