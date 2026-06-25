@@ -184,9 +184,9 @@ class TestApplianceIdExtraction:
         mock_player.alexa_api.set_guard_state.assert_called_once()
         call_args = mock_player.alexa_api.set_guard_state.call_args
         # Should fall back to full appliance_id
-        assert (
-            call_args[0][0] == "ABC_DEF"
-        ), f"Expected full ID 'ABC_DEF' as fallback, got '{call_args[0][0]}'"
+        assert call_args[0][0] == "ABC_DEF", (
+            f"Expected full ID 'ABC_DEF' as fallback, got '{call_args[0][0]}'"
+        )
 
     @pytest.mark.asyncio
     async def test_appliance_id_with_one_part_uses_full_id(self):

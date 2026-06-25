@@ -12,8 +12,8 @@ select = [
 ]
 # E501 (line length) is handled by the formatter. Conservative ruleset to keep
 # the historical (previously flake8-clean) code base green; tighten incrementally.
-# UP038 (isinstance tuple→union) is stylistic and deprecated upstream in ruff.
-ignore = ["E501", "UP038"]
+# UP047 (PEP 695 generics) is an invasive signature rewrite — intentionally relaxed.
+ignore = ["E501", "UP047"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["alexa_media", "tests"]

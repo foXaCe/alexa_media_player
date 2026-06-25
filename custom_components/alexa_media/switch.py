@@ -363,8 +363,9 @@ class DNDSwitch(AlexaMediaSwitch):
         if "dnd_update" in event:
             result = list(
                 filter(
-                    lambda x: x["deviceSerialNumber"]
-                    == self._client.device_serial_number,
+                    lambda x: (
+                        x["deviceSerialNumber"] == self._client.device_serial_number
+                    ),
                     event["dnd_update"],
                 )
             )
