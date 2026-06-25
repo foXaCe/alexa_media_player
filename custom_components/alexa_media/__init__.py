@@ -512,7 +512,9 @@ async def _purge_corrupt_cookie_files(hass, email: str) -> None:
             except Exception as err:  # noqa: BLE001 - any load failure -> purge
                 try:
                     os.remove(path)
-                    _LOGGER.warning(
+                    # Self-healing maintenance action -> log at INFO so it does
+                    # not surface as a custom-integration error in the HA UI.
+                    _LOGGER.info(
                         "Removed unreadable cookie file %s (%s); a fresh login "
                         "will recreate it",
                         path,
