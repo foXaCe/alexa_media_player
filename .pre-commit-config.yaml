@@ -25,8 +25,7 @@ repos:
         exclude: >
           (?x)^(
             .vscode/settings.json|
-            .vscode/launch.json|
-            .devcontainer/devcontainer.json
+            .vscode/launch.json
           )$
       - id: check-yaml
 
@@ -37,7 +36,7 @@ repos:
       - id: commitizen
         stages: ["commit-msg"]
 
-  # --- Spelling & YAML ---
+  # --- Spelling ---
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.2
     hooks:
@@ -46,10 +45,6 @@ repos:
           - tomli
         exclude_types: [csv, json]
         exclude: (^tests/fixtures/|CHANGELOG.md)
-  - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.38.0
-    hooks:
-      - id: yamllint
 
 ci:
   autofix_commit_msg: |

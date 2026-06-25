@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -e
-cd "$(dirname "$0")/.."
-
-# Create a config dir and the test custom_component symlink, then run HA
-mkdir -p config
-bash tests/setup.sh 2>/dev/null || true
-
-hass -c config --debug
