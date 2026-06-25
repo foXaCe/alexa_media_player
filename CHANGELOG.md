@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [5.16.2] - 2026-06-25
+
+### Fixed
+
+- **Reverted the v5.16.1 corrupt-cookie purge, which could break authentication.** aiohttp >= 3.14 writes the cookie cache as JSON (not a Python pickle), so the purge validated every saved cookie file with `pickle.loads()`, treated it as "corrupt", and deleted it on each setup — forcing repeated re-logins and breaking auth for some users. Cookie handling is back to the working v5.16.0 behaviour. The benign HA 2026.7 blocking-call warning from alexapy's cookie load returns and will be addressed separately upstream.
+
 ## [5.16.1] - 2026-06-25
 
 ### Fixed
