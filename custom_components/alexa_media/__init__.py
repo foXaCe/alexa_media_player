@@ -431,15 +431,46 @@ def _select_last_called_payload_from_records(
     return None, set()
 
 
+def _patch_morsel_partitioned() -> None:
+    """Make ``http.cookies.Morsel`` tolerant of reserved keys missing on old instances.
+
+    aiohttp >= 3.14 serialises cookies in ``CookieJar.save()`` by reading every
+    reserved attribute with ``morsel[attr]``. Morsels restored from a cookie
+    pickle written by an older Python/aiohttp -- before the ``partitioned`` key
+    existed -- lack that key, so saving raises ``KeyError: 'partitioned'``.
+    alexapy surfaces it as a connection error, which blocks setup forever on
+    HA 2026.7 / Python 3.14. Returning the default ("") for any missing reserved
+    key fixes the save without dropping the existing session. alexapy already
+    adds ``partitioned`` to ``Morsel._reserved``; this complements it for cookie
+    instances that predate the key.
+    """
+    if getattr(Morsel, "_alexa_media_partitioned_patch", False):
+        return
+    _orig_getitem = Morsel.__getitem__
+
+    def _getitem(self, key):
+        try:
+            return _orig_getitem(self, key)
+        except KeyError:
+            if key in type(self)._reserved:
+                return ""
+            raise
+
+    Morsel.__getitem__ = _getitem
+    Morsel._alexa_media_partitioned_patch = True
+
+
+_patch_morsel_partitioned()
+
+
 def _sanitize_cookies(cookies):
     """Flatten cookies to a plain ``{name: value}`` mapping.
 
     ``AlexaLogin.load_cookie()`` may return a mapping of ``http.cookies.Morsel``
-    objects (for example restored from a pickled aiohttp cookie jar). On
-    Python 3.14 / HA 2026.7, aiohttp can raise ``KeyError: 'partitioned'`` while
-    re-processing such stale Morsels. Reducing them to their string values lets
-    aiohttp rebuild fresh Morsels and avoids the error, while staying the
-    documented input type for ``AlexaLogin.login(cookies=...)``.
+    objects (for example restored from a pickled aiohttp cookie jar). Reducing
+    them to plain string values keeps ``AlexaLogin.login(cookies=...)`` on its
+    documented input type and avoids passing stale Morsels around. (The actual
+    ``KeyError: 'partitioned'`` crash is fixed by ``_patch_morsel_partitioned``.)
     """
     if not cookies or not hasattr(cookies, "items"):
         return cookies
