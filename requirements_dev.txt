@@ -1,6 +1,0 @@
--r requirements_test.txt
-ruff==0.15.19
-mypy>=1.13
-pre-commit>=4.0
-codespell>2.0.0
-yamllint>1.26.0

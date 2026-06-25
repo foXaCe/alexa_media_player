@@ -13,8 +13,8 @@ Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.yml).
 ## Development setup
 
 ```bash
-python -m pip install -r requirements_dev.txt
-pre-commit install        # or: prek install
+python -m pip install -r requirements_test.txt
+prek install              # or: pre-commit install
 bash tests/setup.sh       # creates the test custom_component symlink
 ```
 
