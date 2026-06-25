@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [5.16.1] - 2026-06-25
+
+### Fixed
+
+- Home Assistant 2026.7 blocking-call warning during setup: a corrupt cookie pickle made `AlexaLogin.load_cookie()` fall back to a synchronous `MozillaCookieJar.load()` that opened the file in the event loop. Corrupt cookie pickles are now validated and removed in an executor before login, keeping alexapy on its async path (a fresh login via the refresh token rewrites a valid file). Validated live on HA 2026.7.0b1.
+
+### Changed
+
+- Test coverage raised from 23% to 47% (config flow 90%, light 99%, switch 78%, sensor 53%).
+
 ## [5.16.0] - 2026-06-25
 
 ### Added
