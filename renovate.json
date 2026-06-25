@@ -15,20 +15,24 @@
   },
   "packageRules": [
     {
+      "description": "Auto-merge all GitHub Actions updates (incl. major); CI gates them",
       "matchManagers": ["github-actions"],
-      "labels": ["dependencies", "github-actions"]
+      "labels": ["dependencies", "github-actions"],
+      "automerge": true
     },
     {
+      "description": "Auto-merge all pre-commit hook updates; prek/CI gates them",
       "matchManagers": ["pre-commit"],
-      "labels": ["dependencies", "pre-commit"]
+      "labels": ["dependencies", "pre-commit"],
+      "automerge": true
     },
     {
       "matchManagers": ["pip_requirements"],
       "labels": ["dependencies", "python"]
     },
     {
-      "description": "Auto-merge safe patch/pin/digest updates once CI passes",
-      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "description": "Auto-merge minor and safe updates once CI passes (major Python deps stay manual)",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
     },
     {
