@@ -29,8 +29,8 @@ bash tests/setup.sh       # creates the test custom_component symlink
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, …)
 5. Open a pull request against `main`
 
-Releases are handled automatically by [release-please](https://github.com/googleapis/release-please):
-merging the release PR publishes a new version and bumps `manifest.json`.
+Releases are cut **manually** by the maintainer (bump the `manifest.json` version, tag, and
+publish a GitHub release). There is no automated release bot.
 
 ## Translations
 
