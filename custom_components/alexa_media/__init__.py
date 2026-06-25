@@ -29,7 +29,6 @@ from alexapy import (
 )
 from alexapy.errors import AlexapyTooManyRequestsError
 from alexapy.helpers import delete_cookie as alexapy_delete_cookie
-import async_timeout
 from homeassistant.components.persistent_notification import (
     async_create as async_create_persistent_notification,
     async_dismiss as async_dismiss_persistent_notification,
@@ -1000,7 +999,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                 # handled by the data update coordinator.
                 # Increase timeout from 30s to 45s to permit
                 # get_network_details() retries which could up to 30s.
-                async with async_timeout.timeout(45):
+                async with asyncio.timeout(45):
                     start_fetch = time.monotonic()
                     if _used_cached_devices:
                         (
