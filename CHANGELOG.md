@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [5.16.0] - 2026-06-25
+
+### Added
+
+- `PARALLEL_UPDATES` on all entity platforms (Quality Scale `parallel-updates`).
+- Service actions are registered in `async_setup` so they are always available (`action-setup`).
+- Translated service-action errors via `ServiceValidationError`/`HomeAssistantError` (`action-exceptions`, `exception-translations`).
+- `icons.json` providing icons for entities and service actions (`icon-translations`).
+- Expanded README: removal, configuration parameters, actions, data updates, known limitations and troubleshooting.
+- Release workflow (`.github/workflows/release.yml`).
+
+### Fixed
+
+- `KeyError: 'partitioned'` that blocked setup on Home Assistant 2026.7 / Python 3.14. aiohttp >= 3.14 reads `morsel['partitioned']` in `CookieJar.save()`, and Morsels restored from an older cookie pickle lack that key; a `Morsel.__getitem__` patch returns the default for missing reserved keys. Validated live on HA 2026.7.0b1.
+- Blocking-call warning during proxy login by building the httpx client via Home Assistant's `create_async_httpx_client`.
+- Latent multi-account bug where unloading one config entry unregistered the services for the remaining accounts.
+
+### Changed
+
+- Test coverage raised from 23% to 42% (config flow 90%, services 85%, light 99%, binary sensor 98%).
+
 ## v4.13.5 (2024-10-19)
 
 ### Fix
