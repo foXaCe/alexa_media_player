@@ -199,7 +199,7 @@
       "message": "No previous or current volume level is available for {entity_id}."
     },
     "invalid_entries": {
-      "message": "The number of entries '{entries}' is invalid; it must be a positive integer."
+      "message": "The number of entries {entries} is invalid; it must be a positive integer."
     },
     "no_matching_accounts": {
       "message": "No Alexa Media accounts matched the requested email(s): {emails}."
