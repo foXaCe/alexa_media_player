@@ -14,7 +14,6 @@ import logging
 import os
 import random
 import time
-from typing import Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -49,7 +48,6 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
-from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt, slugify
 import voluptuous as vol
@@ -92,7 +90,6 @@ from .const import (
     LAST_CALLED_SUCCESS_PACE_S,
     LAST_PING_MAX_AGE_SECONDS,
     LAST_PUSH_INACTIVITY_SECONDS,
-    MIN_TIME_BETWEEN_FORCED_SCANS,
     MIN_TIME_BETWEEN_SCANS,
     NOTIFICATION_COOLDOWN,
     NOTIFY_REFRESH_BACKOFF,
@@ -463,7 +460,7 @@ async def async_setup(hass, config):
             issue_domain=DOMAIN,
             severity=IssueSeverity.ERROR,
             translation_key="deprecated_yaml_configuration",
-            learn_more_url="https://github.com/alandtse/alexa_media_player/wiki/Configuration#configurationyaml",
+            learn_more_url="https://github.com/foXaCe/alexa_media_player/wiki/Configuration#configurationyaml",
         )
         _LOGGER.error(
             "YAML configuration of Alexa Media Player is no longer supported. "
@@ -858,7 +855,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     pending_dnd_updates: dict[str, bool] = {}
     scheduled_dnd_tasks: dict[str, asyncio.Task] = {}
 
-    async def async_update_data() -> Optional[AlexaEntityData]:
+    async def async_update_data() -> AlexaEntityData | None:
         # noqa pylint: disable=too-many-branches
         """Fetch data from API endpoint.
 
@@ -1098,7 +1095,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 get_entity_data(login_obj, list(_entities_to_monitor)),
                                 timeout=10.0,
                             )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             _LOGGER.warning(
                                 "%s: get_entity_data timed out after 10s, "
                                 "entity states will be fetched on next cycle",
@@ -1150,9 +1147,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                         try:
                             await process_notifications(login_obj)
                         except (
+                            TimeoutError,
                             AlexapyConnectionError,
                             AlexapyLoginError,
-                            asyncio.TimeoutError,
                             JSONDecodeError,
                         ):
                             _LOGGER.debug(
@@ -1163,9 +1160,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 await asyncio.sleep(5)
                                 await process_notifications(login_obj)
                             except (
+                                TimeoutError,
                                 AlexapyConnectionError,
                                 AlexapyLoginError,
-                                asyncio.TimeoutError,
                                 JSONDecodeError,
                             ):
                                 _LOGGER.debug(
@@ -1213,9 +1210,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 app["serialNumber"]
                             ]
                         ) = device
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
-                    serial
-                ] = device
+                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = (
+                    device
+                )
                 continue
             if exclude and dev_name in exclude:
                 exclude_filter.append(dev_name)
@@ -1226,9 +1223,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 app["serialNumber"]
                             ]
                         ) = device
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
-                    serial
-                ] = device
+                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = (
+                    device
+                )
                 continue
 
             if (
@@ -1326,7 +1323,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                 _LOGGER.debug("[BOOT] platform loading in %.2fs", time.monotonic() - _t)
                 if metrics:
                     metrics.record_boot_stage(f"platforms_loaded_{hide_email(email)}")
-            except (asyncio.TimeoutError, TimeoutException) as ex:
+            except (TimeoutError, TimeoutException) as ex:
                 _LOGGER.error(f"Error while loading platforms: {ex}")
                 raise ConfigEntryNotReady(
                     f"Timeout while loading platforms: {ex}"
@@ -1535,8 +1532,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
                     if not skip_debounce:
                         await asyncio.sleep(
-                            LAST_CALLED_DEBOUNCE_S
-                            + random.uniform(0.0, 0.05)  # nosec B311  # noqa: S311
+                            LAST_CALLED_DEBOUNCE_S + random.uniform(0.0, 0.05)  # nosec B311  # noqa: S311
                         )
                         if account_live["last_called_probe_event"].is_set():
                             continue
@@ -1560,7 +1556,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                             account_live["last_called_probe_event"].clear()
                             preempted = True
                             break
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             break
                     if preempted:
                         continue
@@ -2173,7 +2169,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         _LOGGER.debug("%s: Updating DND state", hide_email(email))
         try:
             dnd = await AlexaAPI.get_dnd_state(login_obj)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.error(
                 "%s: Timeout occurred while fetching DND state",
                 hide_email(email),
@@ -2317,7 +2313,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
         This will only attempt one login before failing.
         """
-        http2: Optional[HTTP2EchoClient] = None
+        http2: HTTP2EchoClient | None = None
         email = login_obj.email
         try:
             if login_obj.session.closed:
@@ -2399,7 +2395,6 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             vol = json_payload.get("volumeSetting")
             muted = json_payload.get("isMuted")
 
-            prev = last_volumes.get(serial)
             eq_prev = last_equalizer.get(serial)
 
             should_simulate = (
@@ -2715,11 +2710,14 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                 ]:
                     pass
 
-                elif command in [
-                    "PUSH_TODO_CHANGE",  # Update To-Do List
-                    "PUSH_LIST_CHANGE",  # Clear a shopping list https://github.com/alandtse/alexa_media_player/issues/1190
-                    "PUSH_LIST_ITEM_CHANGE",  # Update shopping list
-                ]:
+                elif (
+                    command
+                    in [
+                        "PUSH_TODO_CHANGE",  # Update To-Do List
+                        "PUSH_LIST_CHANGE",  # Clear a shopping list https://github.com/alandtse/alexa_media_player/issues/1190
+                        "PUSH_LIST_ITEM_CHANGE",  # Update shopping list
+                    ]
+                ):
                     # To-do
                     _LOGGER.debug("%s currently not supported", command)
                     pass
@@ -2731,9 +2729,12 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     _LOGGER.debug("%s currently not supported", command)
                     pass
 
-                elif command in [
-                    "PUSH_MEDIA_PREFERENCE_CHANGE",  # Disliking or liking songs, https://github.com/alandtse/alexa_media_player/issues/1599
-                ]:
+                elif (
+                    command
+                    in [
+                        "PUSH_MEDIA_PREFERENCE_CHANGE",  # Disliking or liking songs, https://github.com/alandtse/alexa_media_player/issues/1599
+                    ]
+                ):
                     _LOGGER.debug("%s currently not supported", command)
                     pass
 
@@ -2808,9 +2809,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
         email: str = login_obj.email
         _LOGGER.debug("%s: HTTP2push successfully connected", hide_email(email))
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-            "http2error"
-        ] = 0  # set errors to 0
+        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] = (
+            0  # set errors to 0
+        )
         hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2_lastattempt"] = time.time()
 
     @callback
@@ -2848,9 +2849,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                 errors,
                 delay,
             )
-            hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                "http2_lastattempt"
-            ] = time.time()
+            hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2_lastattempt"] = (
+                time.time()
+            )
             http2_client = await http2_connect()
             hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2"] = http2_client
             http2_enabled = bool(http2_client)
@@ -2934,9 +2935,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     _init_last_called_probe_worker(hass.data[DATA_ALEXAMEDIA]["accounts"][email])
 
     _t = time.monotonic()
-    http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2"] = (
-        await http2_connect()
-    )
+    http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
+        "http2"
+    ] = await http2_connect()
     _LOGGER.debug("[BOOT] http2_connect in %.2fs", time.monotonic() - _t)
     coordinator = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get("coordinator")
 
@@ -3062,9 +3063,9 @@ async def async_unload_entry(hass, entry) -> bool:
     )
     if debouncer:
         debouncer.async_cancel()
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-            "confirm_refresh_debouncer"
-        ] = None
+        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["confirm_refresh_debouncer"] = (
+            None
+        )
 
     for component in ALEXA_COMPONENTS + DEPENDENT_ALEXA_COMPONENTS:
         try:
@@ -3217,9 +3218,7 @@ async def test_login_status(hass, config_entry, login) -> bool:
     account = config_entry.data
     _LOGGER.debug("Logging in: %s %s", obfuscate(account), in_progress_instances(hass))
     _LOGGER.debug("Login stats: %s", login.stats)
-    message: str = (
-        f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
-    )
+    message: str = f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
     if login.stats.get("login_timestamp") != datetime(1, 1, 1):
         elaspsed_time: str = str(datetime.now() - login.stats.get("login_timestamp"))
         api_calls: int = login.stats.get("api_calls")

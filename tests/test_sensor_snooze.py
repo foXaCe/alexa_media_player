@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
 
-UTC = datetime.timezone.utc
+UTC = datetime.UTC
 
 
 # ---------------------------------------------------------------------------

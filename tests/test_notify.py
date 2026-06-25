@@ -3,7 +3,7 @@
 Tests the notification service using pytest-homeassistant-custom-component.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

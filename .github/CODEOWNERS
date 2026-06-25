@@ -1,0 +1,11 @@
+# Default owner for everything in the repo
+* @foXaCe
+
+# CI / workflows
+/.github/ @foXaCe
+
+# Integration code
+/custom_components/alexa_media/ @foXaCe
+
+# Translations
+/custom_components/alexa_media/translations/ @foXaCe

@@ -5491,7 +5491,7 @@ Signed-off-by: Alan Tse &lt;alandtse@gmail.com&gt; ([`ad9b95b`](https://github.c
 
 * fix: add retry_async wrapper to automatically retry after failures
 
-This will allow platforms to wait for media_player to load before trying 
+This will allow platforms to wait for media_player to load before trying
 to load ([`2ce12f4`](https://github.com/custom-components/alexa_media_player/commit/2ce12f4d031eb1283e88b2a1f928ef1c2f91f137))
 
 * fix: clean discovery_info of unneeded values prior to passing ([`b5e1894`](https://github.com/custom-components/alexa_media_player/commit/b5e189456cb3bfcf3f12ad2de773dec048e6849c))
@@ -5539,8 +5539,8 @@ chore: sync master to dev ([`8108697`](https://github.com/custom-components/alex
 
 * fix: change platform loading to be account specific
 
-Previously loading platforms would try to load all devices across all 
-accounts. This could result in a race condition if multiple accounts 
+Previously loading platforms would try to load all devices across all
+accounts. This could result in a race condition if multiple accounts
 loaded platforms at the same time. ([`bcc0de7`](https://github.com/custom-components/alexa_media_player/commit/bcc0de791237ed3cf2ca70e454efef194b298fc9))
 
 * fix(notify): rename send_message with prefix async_ ([`243d485`](https://github.com/custom-components/alexa_media_player/commit/243d485e8298f9a71be0f35ff426c1e6a61fb80c))
@@ -6188,7 +6188,7 @@ Resolves #68 ([`3987b4d`](https://github.com/custom-components/alexa_media_playe
 
 * Fix typo in last_activity call
 
-This resolves #68. 
+This resolves #68.
 Signed-off-by: Alan Tse &lt;alandtse@gmail.com&gt; ([`63237be`](https://github.com/custom-components/alexa_media_player/commit/63237be3632f9ed655b8ca9accfeb14d3e020001))
 
 * Bump version (#67) ([`b5c0ef3`](https://github.com/custom-components/alexa_media_player/commit/b5c0ef34c44c20e5ad37103ae4d17e2db572f6d0))

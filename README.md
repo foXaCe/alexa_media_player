@@ -1,54 +1,76 @@
-[![Validate](https://github.com/alandtse/alexa_media_player/actions/workflows/validate.yaml/badge.svg)](https://github.com/alandtse/alexa_media_player/actions/workflows/validate.yaml)
-![semantic_release](https://github.com/alandtse/alexa_media_player/workflows/semantic_release/badge.svg)
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
-![GitHub all releases](https://img.shields.io/github/downloads/alandtse/alexa_media_player/total)
-![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/alandtse/alexa_media_player/latest/total)
+# Alexa Media Player
 
-[Alexa Media Player Custom Component](https://github.com/alandtse/alexa_media_player) for homeassistant
+[![GitHub Release][releases-shield]][releases]
+[![License][license-shield]](LICENSE)
+[![hacs][hacsbadge]][hacs]
+[![CI][ci-shield]][ci]
+[![HACS validation][hacs-validate-shield]][hacs-validate]
+[![hassfest][hassfest-shield]][hassfest]
+[![Downloads][downloads-shield]][releases]
 
-# What This Is:
+_Custom [Home Assistant](https://home-assistant.io) integration to control Amazon Alexa devices (Echo and friends) using the unofficial Alexa API._
 
-This is a custom component to allow control of Amazon Alexa devices in [Home Assistant](https://home-assistant.io) using the unofficial Alexa API. Please note this mimics the Alexa app but Amazon may cut off access at anytime.
+> This is a community fork maintained by [@foXaCe](https://github.com/foXaCe), based on the
+> original work of [@alandtse](https://github.com/alandtse) and [@keatontaylor](https://github.com/keatontaylor).
 
-Originally inspired and created by [Keaton Taylor](https://github.com/keatontaylor)
+> ⚠️ This mimics the Alexa app and relies on an **unofficial** API. Amazon may cut off access at any time.
 
-# What It Does:
+## Features
 
-Allows for control of Amazon Echo products as home assistant media devices with the following features:
+- Control Amazon Echo products as Home Assistant media players (play / pause / stop, next / previous, volume)
+- Retrieve and display song title, artist, album name and album art
+- Send notifications: text-to-speech, mobile push and announcements
+- Turn Alexa Guard on/off (region support required)
 
-- Play/Pause/Stop
-- Next/Previous (Track)
-- Volume
-- Retrieval for displaying in home assistant of:
-  - Song Title
-  - Artists Name
-  - Album Name
-  - Album Image
+## Requirements
 
-# Installation and Configuration
+- Home Assistant >= 2025.2
+- Python >= 3.13
+- An Amazon account with Alexa devices
 
-Please see the [wiki.](https://github.com/alandtse/alexa_media_player/wiki/Configuration)
+## Installation
 
-# Further Documentation
+### HACS (custom repository)
 
-Please see the [wiki](https://github.com/alandtse/alexa_media_player/wiki)
+1. In HACS, add `https://github.com/foXaCe/alexa_media_player` as a custom repository (type: **Integration**)
+2. Search for **Alexa Media Player** and install it
+3. Restart Home Assistant
+4. Go to **Settings → Devices & Services → Add Integration → Alexa Media Player**
 
-# Changelog
+### Manual
 
-Please reference the [release history](https://github.com/alandtse/alexa_media_player/releases).
+1. Copy `custom_components/alexa_media/` into `<config>/custom_components/`
+2. Restart Home Assistant
+3. Add the integration from the UI
 
-# How to Help
+## Configuration
 
-While it'd be nice to have more developers, you can contribute without knowing how to code. You can [file bugs/feature requests](https://github.com/alandtse/alexa_media_player/issues), help answer questions here and on the HA [forums](https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers-needed/58639), or you can help with other tasks like [translations](##translations) and updating the [wiki](https://github.com/alandtse/alexa_media_player/wiki).
-
-## Translations
-
-We are now on [Lokalise](https://app.lokalise.com/project/465185555eee18dd537ca6.39714580/). If you're a native speaker, please [join the team](https://app.lokalise.com/public/465185555eee18dd537ca6.39714580/). See [Translations page](https://github.com/alandtse/alexa_media_player/wiki/Translations) for more details.
+See the [Configuration wiki page](https://github.com/foXaCe/alexa_media_player/wiki/Configuration).
 
 ## Documentation
 
-The [wiki](https://github.com/alandtse/alexa_media_player/wiki) is a group effort to document how to use the component and other useful [automations](https://github.com/alandtse/alexa_media_player/wiki/Examples%3A-Automation). Don't worry about making mistakes as we can revert using the history.
+Full documentation, FAQ and automation examples live in the [wiki](https://github.com/foXaCe/alexa_media_player/wiki).
 
-# License
+## Contributing
 
-[Apache-2.0](LICENSE). By providing a contribution, you agree the contribution is licensed under Apache-2.0. This is required for Home Assistant contributions.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Translations are stored under `custom_components/alexa_media/translations/`.
+
+## License
+
+[Apache-2.0](LICENSE). By providing a contribution, you agree it is licensed under Apache-2.0
+(required for Home Assistant contributions).
+
+<!-- Badges -->
+[releases-shield]: https://img.shields.io/github/release/foXaCe/alexa_media_player.svg?style=for-the-badge
+[releases]: https://github.com/foXaCe/alexa_media_player/releases
+[license-shield]: https://img.shields.io/github/license/foXaCe/alexa_media_player.svg?style=for-the-badge
+[hacs]: https://github.com/hacs/integration
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
+[ci-shield]: https://img.shields.io/github/actions/workflow/status/foXaCe/alexa_media_player/ci.yml?branch=main&style=for-the-badge&label=CI
+[ci]: https://github.com/foXaCe/alexa_media_player/actions/workflows/ci.yml
+[hacs-validate-shield]: https://img.shields.io/github/actions/workflow/status/foXaCe/alexa_media_player/hacs.yml?branch=main&style=for-the-badge&label=HACS
+[hacs-validate]: https://github.com/foXaCe/alexa_media_player/actions/workflows/hacs.yml
+[hassfest-shield]: https://img.shields.io/github/actions/workflow/status/foXaCe/alexa_media_player/hassfest.yml?branch=main&style=for-the-badge&label=hassfest
+[hassfest]: https://github.com/foXaCe/alexa_media_player/actions/workflows/hassfest.yml
+[downloads-shield]: https://img.shields.io/github/downloads/foXaCe/alexa_media_player/total?style=for-the-badge

@@ -9,11 +9,11 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 import re
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 from alexapy import AlexaAPI, AlexaLogin
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -747,7 +747,7 @@ def is_cap_state_still_acceptable(
 
     # Don't protect requested state forever; after TTL fall back to coordinator
     # even if timeOfSample is missing/unparsable.
-    if datetime.now(timezone.utc) - since > _REQUESTED_STATE_TTL:
+    if datetime.now(UTC) - since > _REQUESTED_STATE_TTL:
         return True
 
     formatted_time_of_sample = cap_state.get("timeOfSample")

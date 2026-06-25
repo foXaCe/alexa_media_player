@@ -7,9 +7,10 @@ Optimizations:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import timedelta
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator

@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import subprocess
-from typing import Any, Optional
+from typing import Any
 import urllib.request
 
 from homeassistant import util
@@ -210,7 +210,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
                     await hass.config_entries.async_forward_entry_setups(
                         config_entry, [component]
                     )
-                except (asyncio.TimeoutError, TimeoutException) as ex:
+                except (TimeoutError, TimeoutException) as ex:
                     raise ConfigEntryNotReady(
                         f"Timeout while loading config entry for {component}"
                     ) from ex
@@ -1397,7 +1397,7 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         )
 
     @property
-    def media_image_url(self) -> Optional[str]:
+    def media_image_url(self) -> str | None:
         """Return the image URL of current playing media."""
         # Force None during Bluetooth so Home Assistant stops looking for artwork files
         if (
