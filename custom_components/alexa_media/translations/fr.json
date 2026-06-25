@@ -184,5 +184,25 @@
       },
       "name": "Mettre à jour le capteur du dernier appel"
     }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "L'entité {entity_id} est introuvable dans le registre des entités."
+    },
+    "entity_not_alexa_media": {
+      "message": "L'entité {entity_id} n'est pas une entité Alexa Media Player."
+    },
+    "entity_no_state": {
+      "message": "L'entité {entity_id} n'a aucun état disponible."
+    },
+    "no_previous_volume": {
+      "message": "Aucun niveau de volume précédent ou actuel n'est disponible pour {entity_id}."
+    },
+    "invalid_entries": {
+      "message": "Le nombre d'entrées « {entries} » est invalide ; il doit s'agir d'un entier positif."
+    },
+    "no_matching_accounts": {
+      "message": "Aucun compte Alexa Media ne correspond à l'adresse e-mail demandée : {emails}."
+    }
   }
 }

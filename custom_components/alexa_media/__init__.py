@@ -9,6 +9,7 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 
 import asyncio
 from datetime import datetime, timedelta
+from http.cookies import Morsel
 from json import JSONDecodeError, loads
 import logging
 import os
@@ -430,6 +431,24 @@ def _select_last_called_payload_from_records(
     return None, set()
 
 
+def _sanitize_cookies(cookies):
+    """Flatten cookies to a plain ``{name: value}`` mapping.
+
+    ``AlexaLogin.load_cookie()`` may return a mapping of ``http.cookies.Morsel``
+    objects (for example restored from a pickled aiohttp cookie jar). On
+    Python 3.14 / HA 2026.7, aiohttp can raise ``KeyError: 'partitioned'`` while
+    re-processing such stale Morsels. Reducing them to their string values lets
+    aiohttp rebuild fresh Morsels and avoids the error, while staying the
+    documented input type for ``AlexaLogin.login(cookies=...)``.
+    """
+    if not cookies or not hasattr(cookies, "items"):
+        return cookies
+    return {
+        str(key): (value.value if isinstance(value, Morsel) else value)
+        for key, value in cookies.items()
+    }
+
+
 async def async_setup(hass, config):
     """Set up the Alexa domain."""
     # Initialize metrics
@@ -468,6 +487,16 @@ async def async_setup(hass, config):
             "Settings > Devices & services > Integrations > ADD INTEGRATION"
         )
         return False
+
+    # Register integration-level service actions once, independent of any config
+    # entry, so they are always available and can surface clear errors
+    # (Bronze quality-scale rule: action-setup).
+    hass.data[DOMAIN].setdefault("accounts", {})
+    if "services" not in hass.data[DOMAIN]:
+        alexa_services = AlexaMediaServices(hass)
+        await alexa_services.register()
+        hass.data[DOMAIN]["services"] = alexa_services
+
     return True
 
 
@@ -787,7 +816,7 @@ async def async_setup_entry(hass, config_entry):
     hass.bus.async_listen("alexa_media_relogin_success", login_success)
     try:
         _t = time.monotonic()
-        cookies = await login.load_cookie()
+        cookies = _sanitize_cookies(await login.load_cookie())
         cookie_login_ok = False
         if cookies:
             try:
@@ -817,7 +846,7 @@ async def async_setup_entry(hass, config_entry):
                             await login.check_domain()
                             await login.finalize_login()
                             cookie_login_ok = True
-            except (JSONDecodeError, ValueError, aiohttp.ClientError) as ex:
+            except (JSONDecodeError, ValueError, aiohttp.ClientError, KeyError) as ex:
                 _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
         if not cookie_login_ok:
             await login.login(cookies=cookies)
@@ -2978,11 +3007,8 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     await coordinator.async_config_entry_first_refresh()
     _LOGGER.debug("[BOOT] first_refresh in %.2fs", time.monotonic() - _t)
 
-    # Register services (fast - just registers callbacks)
-    hass.data[DATA_ALEXAMEDIA]["services"] = alexa_services = AlexaMediaServices(
-        hass, functions={"update_last_called": update_last_called}
-    )
-    await alexa_services.register()
+    # Service actions are registered once in async_setup (action-setup), so there
+    # is nothing to register per config entry here.
 
     # Update last_called in background to avoid blocking
     _LOGGER.debug("%s: setup_alexa: Scheduling last_called update", hide_email(email))
@@ -3094,12 +3120,11 @@ async def async_unload_entry(hass, entry) -> bool:
             hass.data[DATA_ALEXAMEDIA]["config_flows"].pop(flow)
     # Clean up hass.data
     if not hass.data[DATA_ALEXAMEDIA].get("accounts"):
-        _LOGGER.debug("Removing accounts data and services")
+        _LOGGER.debug("Removing accounts data")
         hass.data[DATA_ALEXAMEDIA].pop("accounts")
-        alexa_services = hass.data[DATA_ALEXAMEDIA].get("services")
-        if alexa_services:
-            await alexa_services.unregister()
-            hass.data[DATA_ALEXAMEDIA].pop("services")
+        # Service actions are owned by async_setup and intentionally remain
+        # registered for the integration lifetime (action-setup); async_setup is
+        # not re-run on entry reload, so unregistering here would drop them.
     if hass.data[DATA_ALEXAMEDIA].get("config_flows") == {}:
         _LOGGER.debug("Removing config_flows data")
         async_dismiss_persistent_notification(

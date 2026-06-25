@@ -37,6 +37,10 @@ except ImportError:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Entities are refreshed through the shared coordinator/dispatcher rather than
+# per-entity polling, so updates can run unbounded in parallel.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
     """Set up the Alexa switch platform."""

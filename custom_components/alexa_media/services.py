@@ -16,6 +16,7 @@ from typing import Any
 from alexapy import AlexaAPI, AlexapyLoginError, hide_email
 from alexapy.errors import AlexapyConnectionError
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 import voluptuous as vol
 
@@ -100,9 +101,13 @@ SERVICE_DEFS: tuple[AlexaServiceDef, ...] = (
 
 
 class AlexaMediaServices:
-    def __init__(self, hass: HomeAssistant, functions: dict[str, Callable[..., Any]]):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        functions: dict[str, Callable[..., Any]] | None = None,
+    ):
         self.hass = hass
-        self._functions = functions
+        self._functions = functions or {}
 
     async def register(self) -> None:
         """Register Alexa Media custom services."""
@@ -133,7 +138,7 @@ class AlexaMediaServices:
         requested_emails = call.data.get(ATTR_EMAIL)
         _LOGGER.debug("Service force_logout called for: %s", requested_emails)
 
-        accounts = self.hass.data[DATA_ALEXAMEDIA]["accounts"]
+        accounts = self.hass.data.get(DATA_ALEXAMEDIA, {}).get("accounts", {})
         success = False
 
         for email, account_dict in accounts.items():
@@ -152,9 +157,10 @@ class AlexaMediaServices:
             )
 
         if requested_emails and not success:
-            _LOGGER.warning(
-                "force_logout called for %s but no matching Alexa Media accounts were found",
-                requested_emails,
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_matching_accounts",
+                translation_placeholders={"emails": ", ".join(requested_emails)},
             )
 
         return success
@@ -168,17 +174,20 @@ class AlexaMediaServices:
                                                 If None, all accounts are updated.
         """
         requested_emails = call.data.get(ATTR_EMAIL)
-        update_last_called = self._functions.get("update_last_called")
+        accounts = self.hass.data.get(DATA_ALEXAMEDIA, {}).get("accounts", {})
 
-        if not callable(update_last_called):
-            _LOGGER.error(
-                "update_last_called function not registered; cannot update last_called"
-            )
+        if not accounts:
+            _LOGGER.debug("update_last_called called but no accounts are loaded")
             return
 
         _LOGGER.debug("Service update_last_called called for: %s", requested_emails)
 
-        for email, account_dict in self.hass.data[DATA_ALEXAMEDIA]["accounts"].items():
+        # Prefer an injected closure (legacy per-entry wiring) but fall back to the
+        # module-level implementation so the action works when it is registered from
+        # async_setup, independently of any config entry.
+        injected = self._functions.get("update_last_called")
+
+        for email, account_dict in accounts.items():
             if requested_emails and email not in requested_emails:
                 continue
 
@@ -186,7 +195,14 @@ class AlexaMediaServices:
 
             async def _run_update_last_called(email: str, login_obj) -> None:
                 try:
-                    await update_last_called(login_obj)
+                    if callable(injected):
+                        await injected(login_obj)
+                    else:
+                        from . import _async_update_last_called_global
+
+                        await _async_update_last_called_global(
+                            self.hass, login_obj, email
+                        )
                 except asyncio.CancelledError:
                     raise
                 except AlexapyLoginError:
@@ -204,10 +220,8 @@ class AlexaMediaServices:
                     )
                 finally:
                     # Clean up task reference when done
-                    if email in self.hass.data[DATA_ALEXAMEDIA]["accounts"]:
-                        self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].pop(
-                            "service_update_last_called_task", None
-                        )
+                    if email in accounts:
+                        accounts[email].pop("service_update_last_called_task", None)
 
             # Cancel any existing task for this account before creating a new one
             existing_task = account_dict.get("service_update_last_called_task")
@@ -236,14 +250,20 @@ class AlexaMediaServices:
         entity_entry = entity_registry.async_get(entity_id)
 
         if not entity_entry:
-            _LOGGER.error("Entity %s not found in registry", entity_id)
-            return False
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="entity_not_found",
+                translation_placeholders={"entity_id": entity_id},
+            )
 
         # Retrieve the state and attributes
         state = self.hass.states.get(entity_id)
         if not state:
-            _LOGGER.warning("Entity %s has no state; cannot restore volume", entity_id)
-            return False
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="entity_no_state",
+                translation_placeholders={"entity_id": entity_id},
+            )
 
         previous_volume = state.attributes.get("previous_volume")
         current_volume = state.attributes.get("volume_level")
@@ -257,11 +277,11 @@ class AlexaMediaServices:
             previous_volume = current_volume
 
         if previous_volume is None:
-            _LOGGER.warning(
-                "No valid volume levels found for entity %s; cannot restore volume",
-                entity_id,
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="no_previous_volume",
+                translation_placeholders={"entity_id": entity_id},
             )
-            return False
 
         # Call the volume_set service with the retrieved volume
         await self.hass.services.async_call(
@@ -285,21 +305,19 @@ class AlexaMediaServices:
         # Validate number_of_entries
         try:
             number_of_entries_int = int(number_of_entries)
-        except (TypeError, ValueError):
-            _LOGGER.exception(
-                "Service get_history_records for %s has invalid entries value: %s",
-                entity_id,
-                number_of_entries,
-            )
-            return False
+        except (TypeError, ValueError) as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_entries",
+                translation_placeholders={"entries": str(number_of_entries)},
+            ) from err
 
         if number_of_entries_int <= 0:
-            _LOGGER.error(
-                "Service get_history_records for %s with %s entries is invalid; must be > 0",
-                entity_id,
-                number_of_entries_int,
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_entries",
+                translation_placeholders={"entries": str(number_of_entries_int)},
             )
-            return False
 
         _LOGGER.debug(
             "Service get_history_records for: %s with %s entries",
@@ -311,8 +329,11 @@ class AlexaMediaServices:
         entity_registry = er.async_get(self.hass)
         entity_entry = entity_registry.async_get(entity_id)
         if not entity_entry or entity_entry.platform != DOMAIN:
-            _LOGGER.error("Entity %s not found or not part of %s", entity_id, DOMAIN)
-            return False
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="entity_not_alexa_media",
+                translation_placeholders={"entity_id": entity_id},
+            )
         target_serial_number = entity_entry.unique_id
 
         history_data_total: list[dict[str, Any]] = []
@@ -347,7 +368,8 @@ class AlexaMediaServices:
                 history_data_total.append(entry)
 
         # Iterate accounts and collect history
-        for email, account_dict in self.hass.data[DATA_ALEXAMEDIA]["accounts"].items():
+        accounts = self.hass.data.get(DATA_ALEXAMEDIA, {}).get("accounts", {})
+        for email, account_dict in accounts.items():
             login_obj = account_dict["login_obj"]
             try:
                 await _collect_history_for_account(login_obj)
@@ -385,15 +407,18 @@ class AlexaMediaServices:
             self.hass.states.async_set(entity_id, state.state, new_attributes)
             return True
 
-        _LOGGER.error("Entity %s state not found", entity_id)
-        return False
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="entity_no_state",
+            translation_placeholders={"entity_id": entity_id},
+        )
 
     async def enable_network_discovery(self, call: ServiceCall) -> None:
         """Re-enable network discovery for one or more Alexa accounts."""
         data = call.data or {}
         target_emails: list[str] = data.get(ATTR_EMAIL, [])
 
-        accounts = self.hass.data[DATA_ALEXAMEDIA]["accounts"]
+        accounts = self.hass.data.get(DATA_ALEXAMEDIA, {}).get("accounts", {})
         any_matched = False
 
         for email, account_dict in accounts.items():
@@ -416,7 +441,8 @@ class AlexaMediaServices:
             )
 
         if target_emails and not any_matched:
-            _LOGGER.warning(
-                "enable_network_discovery called for %s but no matching Alexa Media accounts were found",
-                target_emails,
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_matching_accounts",
+                translation_placeholders={"emails": ", ".join(target_emails)},
             )
