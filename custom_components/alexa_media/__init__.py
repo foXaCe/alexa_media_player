@@ -23,7 +23,6 @@ from alexapy import (
     AlexapyConnectionError,
     __version__ as alexapy_version,
     hide_serial as hide_serial,  # re-exported for the platform modules
-    obfuscate,
 )
 from alexapy.helpers import delete_cookie as alexapy_delete_cookie
 from homeassistant.components.persistent_notification import (
@@ -75,6 +74,7 @@ from .coordinator import AlexaMediaCoordinator
 from .helpers import (
     calculate_uuid,
     hide_email,
+    redact_sensitive,
     safe_get,
 )
 from .metrics import AlexaMetrics, get_metrics
@@ -776,7 +776,9 @@ async def test_login_status(hass, config_entry, login) -> bool:
     if login.status and login.status.get("login_successful"):
         return True
     account = config_entry.data
-    _LOGGER.debug("Logging in: %s %s", obfuscate(account), in_progress_instances(hass))
+    _LOGGER.debug(
+        "Logging in: %s %s", redact_sensitive(account), in_progress_instances(hass)
+    )
     _LOGGER.debug("Login stats: %s", login.stats)
     message: str = f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
     if login.stats.get("login_timestamp") != datetime(1, 1, 1):
