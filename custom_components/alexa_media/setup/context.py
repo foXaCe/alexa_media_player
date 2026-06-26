@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from alexapy import AlexaLogin
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
@@ -36,6 +37,12 @@ class SetupContext:
     email: str
     debug: bool = False
     metrics: AlexaMetrics | None = None
+    # The account login object for this setup_alexa invocation (recreated on
+    # relogin), used by the HTTP/2 push handlers.
+    login_obj: AlexaLogin | None = None
+    # Polling interval in seconds; set once setup_alexa has resolved it from the
+    # config entry. Used by the HTTP/2 push reconnect logic.
+    scan_interval: float = 60.0
 
     # DND throttling state (one set per setup_alexa invocation).
     dnd_update_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
