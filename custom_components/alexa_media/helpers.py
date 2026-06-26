@@ -594,3 +594,22 @@ def _network_allowed(login_obj) -> bool:
     if not login_obj.status.get("login_successful"):
         return False
     return True
+
+
+def _entity_backed_serials(account: dict) -> set[str]:
+    """Return serials that exist only because we created entity-backed devices.
+
+    These serials may not be discoverable via media player inventory, but should
+    still be considered 'current' so we don't prune/ignore them.
+    """
+    serials: set[str] = set()
+    entities = account.get("entities")
+    if not isinstance(entities, dict):
+        return serials
+
+    # Sensors are stored keyed by serial; this is where AIAQM lives.
+    sensors = entities.get("sensor")
+    if isinstance(sensors, dict):
+        serials.update(s for s in sensors.keys() if isinstance(s, str) and s)
+
+    return serials
