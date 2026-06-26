@@ -198,7 +198,7 @@ class AlexaMediaServices:
                     if callable(injected):
                         await injected(login_obj)
                     else:
-                        from . import _async_update_last_called_global
+                        from .setup.last_called import _async_update_last_called_global
 
                         await _async_update_last_called_global(
                             self.hass, login_obj, email

@@ -613,3 +613,54 @@ def _entity_backed_serials(account: dict) -> set[str]:
         serials.update(s for s in sensors.keys() if isinstance(s, str) and s)
 
     return serials
+
+
+def _entity_backed_device_identifiers(account_dict: dict) -> set[str]:
+    """Collect device identifier strings for devices that are backed by entities.
+
+    Alexa Media Player historically prunes stale HA Device Registry entries by comparing
+    device identifiers against the current *media_player* serials. That works for Echoes,
+    but fails for entity-only devices (e.g., Amazon Indoor Air Quality Monitor) which have
+    no media_player entity. Those devices would get pruned unless we also consider the
+    identifiers referenced by entities we created.
+    """
+    identifiers: set[str] = set()
+
+    def _collect_from_device_info(device_info) -> None:
+        if not device_info:
+            return
+        try:
+            # dr.DeviceInfo
+            di_idents = getattr(device_info, "identifiers", None)
+            if di_idents:
+                for ident in di_idents:
+                    if isinstance(ident, tuple) and len(ident) == 2:
+                        identifiers.add(ident[1])
+                return
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.debug("Could not extract identifiers from device_info: %s", exc)
+        # dict-style device_info
+        if isinstance(device_info, dict):
+            di_idents = device_info.get("identifiers")
+            if di_idents:
+                for ident in di_idents:
+                    if isinstance(ident, tuple) and len(ident) == 2:
+                        identifiers.add(ident[1])
+
+    # Recursively walk nested entity structures (dict/list/tuple/set) and collect any device_info found.
+    def _walk(obj) -> None:
+        if obj is None:
+            return
+
+        # Entity-ish object
+        _collect_from_device_info(getattr(obj, "device_info", None))
+
+        if isinstance(obj, dict):
+            for v in obj.values():
+                _walk(v)
+        elif isinstance(obj, (list, tuple, set)):
+            for v in obj:
+                _walk(v)
+
+    _walk(account_dict.get("entities", {}))
+    return identifiers
