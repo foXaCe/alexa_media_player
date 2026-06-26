@@ -48,6 +48,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt, slugify
 import voluptuous as vol
@@ -1266,6 +1267,12 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         except asyncio.CancelledError:
             # Task cancelled during unload/shutdown; propagate cancellation.
             raise
+        except (AlexapyConnectionError, AlexapyTooManyRequestsError) as err:
+            # Surface transient cloud failures to the coordinator as UpdateFailed so
+            # last_update_success flips to False (entities become unavailable) and
+            # the first refresh raises ConfigEntryNotReady instead of logging an
+            # unexpected error with a full traceback.
+            raise UpdateFailed(f"Error communicating with Alexa API: {err}") from err
 
         _t_proc = time.monotonic()
         new_alexa_clients = []  # list of newly discovered device names
