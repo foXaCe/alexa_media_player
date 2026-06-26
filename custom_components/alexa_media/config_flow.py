@@ -25,7 +25,6 @@ from alexapy import (
     AlexapyConnectionError,
     AlexapyPyotpInvalidKey,
     hide_email,
-    obfuscate,
 )
 from awesomeversion import AwesomeVersion
 from homeassistant import config_entries
@@ -77,7 +76,7 @@ from .const import (
     DOMAIN,
     ISSUE_URL,
 )
-from .helpers import calculate_uuid
+from .helpers import calculate_uuid, redact_sensitive
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -617,7 +616,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
         _LOGGER.debug(
             "Processing input for %s: %s",
             step_id,
-            obfuscate(user_input),
+            redact_sensitive(user_input),
         )
         self._save_user_input_to_config(user_input=user_input)
         if user_input:
@@ -631,7 +630,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
         reauth_schema = self._update_schema_defaults()
         _LOGGER.debug(
             "Creating reauth form with %s",
-            obfuscate(self.config),
+            redact_sensitive(self.config),
         )
         self.automatic_steps = 0
         if self.login is None:
@@ -724,7 +723,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                     )
                 return self.async_abort(reason="reauth_successful")
             _LOGGER.debug(
-                "Setting up Alexa devices with %s", dict(obfuscate(self.config))
+                "Setting up Alexa devices with %s", dict(redact_sensitive(self.config))
             )
             self._abort_if_unique_id_configured(self.config)
             return self.async_create_entry(

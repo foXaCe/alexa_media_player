@@ -12,6 +12,7 @@ from custom_components.alexa_media.helpers import (
     _existing_serials,
     add_devices,
     is_http2_enabled,
+    redact_sensitive,
     safe_get,
 )
 
@@ -571,3 +572,70 @@ def test_safe_get_none_default_no_type_check():
         mock_dictor.return_value = 123
         result = safe_get({}, ["key"], None)
         assert result == 123
+
+
+# =============================================================================
+# Tests for redact_sensitive (credential hygiene in logs)
+# =============================================================================
+
+
+def _sample_account():
+    """Return a config-entry-like mapping with OAuth secrets."""
+    return {
+        "email": "foxace66@gmail.com",
+        "password": "hunter2hunter",
+        "url": "amazon.fr",
+        "oauth": {
+            "access_token": "Atna|ACCESSTOKENVALUE1234567890",
+            "refresh_token": "Atnr|REFRESHTOKENVALUE1234567890",
+            "authorization_code": "ANZtjnmHetApoRIWCbPSDVut",
+            "code_verifier": "Wx8UKjB5WDsQVTFSLxNeh0sOXCrlzjwDo4iz5gUz4nI",
+            "mac_dms": {
+                "adp_token": "{enc:SUPERSECRETADPTOKEN}",
+                "device_private_key": "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKg",
+            },
+        },
+    }
+
+
+def test_redact_sensitive_masks_all_oauth_secrets():
+    """No usable OAuth credential should survive redaction, even nested."""
+    account = _sample_account()
+    secrets = (
+        "hunter2hunter",
+        "Atna|ACCESSTOKENVALUE1234567890",
+        "Atnr|REFRESHTOKENVALUE1234567890",
+        "ANZtjnmHetApoRIWCbPSDVut",
+        "Wx8UKjB5WDsQVTFSLxNeh0sOXCrlzjwDo4iz5gUz4nI",
+        "{enc:SUPERSECRETADPTOKEN}",
+        "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKg",
+    )
+
+    rendered = str(redact_sensitive(account))
+
+    for secret in secrets:
+        assert secret not in rendered, f"leaked secret: {secret}"
+
+
+def test_redact_sensitive_keeps_email_debuggable_and_no_mutation():
+    """Email stays partially visible for debugging; the input is not mutated."""
+    account = _sample_account()
+    redacted = redact_sensitive(account)
+
+    # Full email is never exposed, but it is not fully wiped either.
+    assert account["email"] not in str(redacted)
+    assert redacted["email"] != account["email"]
+    assert redacted["email"]  # not empty
+
+    # mac_dms (adp_token + RSA private key) is redacted wholesale.
+    assert redacted["oauth"]["mac_dms"] == "**REDACTED**"
+
+    # The original mapping is untouched.
+    assert account["password"] == "hunter2hunter"
+    assert account["oauth"]["mac_dms"]["device_private_key"].startswith("MIIEvg")
+
+
+def test_redact_sensitive_handles_non_mapping():
+    """Non-mapping inputs must not raise."""
+    assert redact_sensitive(None) == ""
+    assert redact_sensitive("just-a-string") == "just-a-string"

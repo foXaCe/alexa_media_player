@@ -14,7 +14,12 @@ import hashlib
 import logging
 from typing import Any, TypeVar, overload
 
-from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
+from alexapy import (
+    AlexapyLoginCloseRequested,
+    AlexapyLoginError,
+    hide_email,
+    obfuscate,
+)
 from alexapy.alexalogin import AlexaLogin
 from dictor import dictor
 from homeassistant.const import CONF_EMAIL, CONF_URL
@@ -22,12 +27,30 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConditionErrorMessage
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
+from homeassistant.helpers.redact import async_redact_data
 import wrapt
 
-from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE
+from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE, TO_REDACT
 
 _LOGGER = logging.getLogger(__name__)
 ArgType = TypeVar("ArgType")
+
+
+def redact_sensitive(data: Any) -> Any:
+    """Return a log-safe copy of ``data`` with all credentials masked.
+
+    ``alexapy.obfuscate`` partially masks email/password/access_token/refresh_token
+    but leaves the OAuth secrets in cleartext (``authorization_code``,
+    ``code_verifier`` and ``mac_dms`` -- which itself holds ``adp_token`` and the
+    RSA ``device_private_key``). Layering :func:`async_redact_data` with
+    :data:`TO_REDACT` on top fully redacts those, so the integration never logs a
+    usable credential even at ``DEBUG``.
+    """
+    try:
+        return async_redact_data(obfuscate(data), TO_REDACT)
+    except (TypeError, ValueError, AttributeError):
+        # Fall back to alexapy's obfuscation if the structure is unexpected.
+        return obfuscate(data)
 
 
 def _norm_filter_token(value: Any) -> str | None:
