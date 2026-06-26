@@ -584,3 +584,13 @@ def safe_get(
         if not isinstance(result, type(default)):
             result = default
     return result
+
+
+def _network_allowed(login_obj) -> bool:
+    if login_obj.close_requested:
+        return False
+    if login_obj.session.closed:
+        return False
+    if not login_obj.status.get("login_successful"):
+        return False
+    return True
