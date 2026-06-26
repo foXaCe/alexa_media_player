@@ -91,7 +91,6 @@ from .const import (
     LAST_CALLED_SUCCESS_PACE_S,
     LAST_PING_MAX_AGE_SECONDS,
     LAST_PUSH_INACTIVITY_SECONDS,
-    MIN_TIME_BETWEEN_SCANS,
     NOTIFICATION_COOLDOWN,
     NOTIFY_REFRESH_BACKOFF,
     NOTIFY_REFRESH_MAX_RETRIES,
@@ -113,6 +112,7 @@ from .metrics import AlexaMetrics, get_metrics
 from .notify import async_unload_entry as notify_async_unload_entry
 from .runtime_data import AlexaRuntimeData
 from .services import AlexaMediaServices
+from .setup import SetupContext, bluetooth as setup_bluetooth, dnd as setup_dnd
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -924,11 +924,15 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     if metrics:
         metrics.record_boot_stage(f"setup_alexa_start_{hide_email(email)}")
 
-    # Initialize throttling state and lock
-    dnd_update_lock = asyncio.Lock()
-    last_dnd_update_times: dict[str, datetime] = {}
-    pending_dnd_updates: dict[str, bool] = {}
-    scheduled_dnd_tasks: dict[str, asyncio.Task] = {}
+    # Shared per-entry state for the extracted setup/ helpers (DND throttling, ...).
+    # Recreated on every (re)login, matching the previous closure-based behaviour.
+    ctx = SetupContext(
+        hass=hass,
+        config_entry=config_entry,
+        email=email,
+        debug=debug,
+        metrics=metrics,
+    )
 
     async def async_update_data() -> AlexaEntityData | None:
         # noqa pylint: disable=too-many-branches
@@ -2112,167 +2116,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             _LOGGER.debug(
                 "%s: last_called indicates DND voice toggle", hide_email(email)
             )
-            await update_dnd_state(login_obj)
-
-    @_catch_login_errors
-    async def update_bluetooth_state(login_obj, device_serial):
-        """Update the bluetooth state on ws bluetooth event."""
-        bluetooth = await AlexaAPI.get_bluetooth(login_obj)
-        device = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
-            "media_player"
-        ][device_serial]
-
-        if bluetooth is not None and "bluetoothStates" in bluetooth:
-            for b_state in bluetooth["bluetoothStates"]:
-                if device_serial == b_state["deviceSerialNumber"]:
-                    _LOGGER.debug(
-                        "%s: setting value for: %s to %s",
-                        hide_email(email),
-                        hide_serial(device_serial),
-                        hide_serial(b_state),
-                    )
-                    device["bluetooth_state"] = b_state
-                    return device["bluetooth_state"]
-        _LOGGER.debug(
-            "%s: get_bluetooth for: %s failed with %s",
-            hide_email(email),
-            hide_serial(device_serial),
-            hide_serial(bluetooth),
-        )
-        return None
-
-    async def schedule_update_dnd_state(email: str) -> None:
-        """Run one deferred DND refresh after the cooldown expires."""
-        try:
-            while True:
-                async with dnd_update_lock:
-                    if not pending_dnd_updates.get(email, False):
-                        scheduled_dnd_tasks.pop(email, None)
-                        return
-
-                    last_run = last_dnd_update_times.get(email)
-                    now = datetime.utcnow()
-
-                    remaining = 0.0
-                    if last_run is not None:
-                        elapsed = now - last_run
-                        if elapsed < MIN_TIME_BETWEEN_SCANS:
-                            remaining = (
-                                MIN_TIME_BETWEEN_SCANS - elapsed
-                            ).total_seconds()
-
-                if remaining > 0:
-                    _LOGGER.debug(
-                        "%s: Deferred DND update sleeping %.3fs until cooldown expires",
-                        hide_email(email),
-                        remaining,
-                    )
-                    await asyncio.sleep(remaining)
-
-                async with dnd_update_lock:
-                    if not pending_dnd_updates.get(email, False):
-                        scheduled_dnd_tasks.pop(email, None)
-                        return
-
-                    last_run = last_dnd_update_times.get(email)
-                    now = datetime.utcnow()
-                    if (
-                        last_run is not None
-                        and (now - last_run) < MIN_TIME_BETWEEN_SCANS
-                    ):
-                        # Another update snuck in or timing was slightly early; loop and re-evaluate.
-                        continue
-
-                    pending_dnd_updates[email] = False
-                    scheduled_dnd_tasks.pop(email, None)
-
-                login_obj = (
-                    hass.data.get(DATA_ALEXAMEDIA, {})
-                    .get("accounts", {})
-                    .get(email, {})
-                    .get("login_obj")
-                )
-                if not login_obj:
-                    _LOGGER.debug(
-                        "%s: Skipping scheduled forced DND update: login_obj missing",
-                        hide_email(email),
-                    )
-                    return
-
-                _LOGGER.debug(
-                    "%s: Executing scheduled forced DND update",
-                    hide_email(email),
-                )
-                await update_dnd_state(login_obj)
-                return
-
-        except asyncio.CancelledError:
-            _LOGGER.debug("%s: Deferred DND update task cancelled", hide_email(email))
-            raise
-        finally:
-            async with dnd_update_lock:
-                task = scheduled_dnd_tasks.get(email)
-                if task is asyncio.current_task():
-                    scheduled_dnd_tasks.pop(email, None)
-
-    @_catch_login_errors
-    async def update_dnd_state(login_obj) -> None:
-        """Update the DND state on websocket DND combo event."""
-        email = login_obj.email
-        now = datetime.utcnow()
-
-        async with dnd_update_lock:
-            last_run = last_dnd_update_times.get(email)
-
-            if last_run is not None and (now - last_run) < MIN_TIME_BETWEEN_SCANS:
-                pending_dnd_updates[email] = True
-
-                if (
-                    email not in scheduled_dnd_tasks
-                    or scheduled_dnd_tasks[email].done()
-                ):
-                    _LOGGER.debug(
-                        "%s: Throttling active; scheduling deferred DND update.",
-                        hide_email(email),
-                    )
-                    scheduled_dnd_tasks[email] = asyncio.create_task(
-                        schedule_update_dnd_state(email)
-                    )
-                else:
-                    _LOGGER.debug(
-                        "%s: Throttling active; deferred DND update already scheduled.",
-                        hide_email(email),
-                    )
-                return
-
-            last_dnd_update_times[email] = now
-
-        _LOGGER.debug("%s: Updating DND state", hide_email(email))
-        try:
-            dnd = await AlexaAPI.get_dnd_state(login_obj)
-        except TimeoutError:
-            _LOGGER.error(
-                "%s: Timeout occurred while fetching DND state",
-                hide_email(email),
-            )
-            return
-        except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.error(
-                "%s: Unexpected error while fetching DND state: %s",
-                hide_email(email),
-                err,
-            )
-            return
-
-        if dnd is not None and "doNotDisturbDeviceStatusList" in dnd:
-            async_dispatcher_send(
-                hass,
-                f"{DOMAIN}_{hide_email(email)}"[0:32],
-                {"dnd_update": dnd["doNotDisturbDeviceStatusList"]},
-            )
-            return
-
-        _LOGGER.debug("%s: get_dnd_state failed: dnd:%s", hide_email(email), dnd)
+            await setup_dnd.update_dnd_state(login_obj, ctx)
 
     def _schedule_notifications_refresh(
         hass,
@@ -2739,8 +2583,8 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                             "Updating media_player bluetooth %s",
                             hide_serial(json_payload),
                         )
-                        bluetooth_state = await update_bluetooth_state(
-                            login_obj, serial
+                        bluetooth_state = await setup_bluetooth.update_bluetooth_state(
+                            login_obj, ctx, serial
                         )
                         _LOGGER.debug(
                             "bluetooth_state %s", hide_serial(bluetooth_state)
@@ -2869,7 +2713,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                             len(events),
                             events,
                         )
-                        await update_dnd_state(login_obj)
+                        await setup_dnd.update_dnd_state(login_obj, ctx)
 
                 if (
                     serial
