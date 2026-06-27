@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`has_entity_name` adopted on every entity platform** — `media_player`, `light`, `binary_sensor` and `alarm_control_panel` now return `name=None` and expose a `DeviceInfo` named after the former friendly name (Quality Scale Bronze/Gold). Name-neutral: the composed `friendly_name` is unchanged and `unique_id`/`entity_id` are untouched. Verified live, friendly names equal the device names (#32, #33).
+- **Control switches use an `EntityDescription`** — DND/Shuffle/Repeat share a frozen `AlexaSwitchEntityDescription` (extends `SwitchEntityDescription` with on/off icon variants) carrying `translation_key`, `entity_category` and icons declaratively, replacing the per-subclass property overrides. `unique_id` is unchanged (#39).
+
 ### Security
 
 - **OAuth secrets are no longer logged in cleartext at `DEBUG`.** `alexapy.obfuscate()` left `authorization_code`, `code_verifier` and `mac_dms` (containing `adp_token` and the RSA `device_private_key`) unmasked. A new `helpers.redact_sensitive()` layers `async_redact_data(..., TO_REDACT)` on top of `obfuscate()` and now guards every account/config log site (#25).
@@ -12,9 +17,14 @@
 - The coordinator update now raises `UpdateFailed` on transient `AlexapyConnectionError`/`AlexapyTooManyRequestsError`, so entity availability and `ConfigEntryNotReady` retries behave correctly (#23).
 - `from __future__ import annotations` added across all modules; the deprecated stdlib `datetime.utcnow()` replaced with timezone-aware `datetime.now(UTC)` (#27, #28).
 
+### Fixed
+
+- **`_catch_login_errors` recovered the login from `instance` (always `None` on that code path) instead of the matched argument**, raising `AttributeError` mid-recovery and skipping the relogin report (#38).
+- **A single transient GraphQL `Unauthenticated` response at startup no longer forces a manual login.** The reauth guard demanded a manual login for any relogin within 60 s of the last successful login; it now retries automatically up to `REAUTH_MAX_AUTO_ATTEMPTS` (3) times first, absorbing transient post-boot auth flakiness before falling back to manual. Also fixes the latent `timedelta.seconds` → `.total_seconds()` wrap. Verified live: a flaky boot logged "automatic attempt 1/3; retrying" instead of "manual login required" (#40).
+
 ### Tests
 
-- Dedicated tests for the extracted `setup/` modules (bluetooth/context to 100%, coordinator_data guards + `UpdateFailed`/relogin paths, last_called pure helpers) and for `redact_sensitive`. Suite grew from 400 to 429+ (#26, #29).
+- **Integration coverage raised from ~52% to 94%** (suite ~430 → 987 tests): setup modules `push`/`coordinator_data`/`dnd` → 100% and `last_called` → 65%; `alexa_entity`/`notify`/`metrics` → 100%; `helpers`/`sensor`/`switch`/`diagnostics` → 99–100%; `__init__` → 99%; `config_flow`/`services`/`coordinator`/`runtime_data` → 100%; `media_player` 38% → 82% (#31, #34, #35, #36, #37). Earlier `setup/` module tests and `redact_sensitive` (#26, #29).
 
 ## [5.16.2] - 2026-06-25
 
