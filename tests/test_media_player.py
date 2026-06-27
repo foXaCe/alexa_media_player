@@ -39,7 +39,11 @@ def test_name_serial_unique_id():
     client = _make_client()
     client._device_name = "Living Room"
     client._device_serial_number = "SN123"
-    assert client.name == "Living Room"
+    # has_entity_name: the entity name is None and the friendly name comes from
+    # the device, so the display name is unchanged from the old `name` behaviour.
+    assert client.has_entity_name is True
+    assert client.name is None
+    assert client.device_info["name"] == "Living Room"
     assert client.device_serial_number == "SN123"
     assert client.unique_id == "SN123"  # second_account_index == 0
 
