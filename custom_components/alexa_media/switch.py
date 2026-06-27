@@ -9,6 +9,7 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import datetime
 import logging
 
@@ -37,11 +38,48 @@ try:
 except ImportError:
     from homeassistant.components.switch import SwitchDevice
 
+from homeassistant.components.switch import SwitchEntityDescription
+
 _LOGGER = logging.getLogger(__name__)
 
 # Entities are refreshed through the shared coordinator/dispatcher rather than
 # per-entity polling, so updates can run unbounded in parallel.
 PARALLEL_UPDATES = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class AlexaSwitchEntityDescription(SwitchEntityDescription):
+    """Describe an Alexa Media control switch.
+
+    Adds on/off icon variants on top of the standard fields so the dynamic,
+    state-dependent icon can be carried declaratively in the description.
+    """
+
+    icon_on: str | None = None
+    icon_off: str | None = None
+
+
+DND_SWITCH_DESCRIPTION = AlexaSwitchEntityDescription(
+    key="dnd",
+    translation_key="do_not_disturb",
+    entity_category=EntityCategory.CONFIG,
+    icon_on="mdi:minus-circle",
+    icon_off="mdi:minus-circle-off",
+)
+SHUFFLE_SWITCH_DESCRIPTION = AlexaSwitchEntityDescription(
+    key="shuffle",
+    translation_key="shuffle",
+    entity_category=EntityCategory.CONFIG,
+    icon_on="mdi:shuffle",
+    icon_off="mdi:shuffle-disabled",
+)
+REPEAT_SWITCH_DESCRIPTION = AlexaSwitchEntityDescription(
+    key="repeat",
+    translation_key="repeat",
+    entity_category=EntityCategory.CONFIG,
+    icon_on="mdi:repeat",
+    icon_off="mdi:repeat-off",
+)
 
 
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
@@ -327,7 +365,10 @@ class AlexaMediaSwitch(SwitchDevice, AlexaMedia):
 
     @property
     def icon(self):
-        """Return the icon of the switch."""
+        """Return the icon, choosing the on/off variant from the description."""
+        description = getattr(self, "entity_description", None)
+        if isinstance(description, AlexaSwitchEntityDescription):
+            return self._icon(description.icon_on, description.icon_off)
         return self._icon()
 
     def _icon(self, on=None, off=None):  # pylint: disable=invalid-name
@@ -337,7 +378,7 @@ class AlexaMediaSwitch(SwitchDevice, AlexaMedia):
 class DNDSwitch(AlexaMediaSwitch):
     """Representation of a Alexa Media Do Not Disturb switch."""
 
-    _attr_translation_key = "do_not_disturb"
+    entity_description = DND_SWITCH_DESCRIPTION
 
     def __init__(self, client):
         """Initialize the Alexa Switch."""
@@ -348,16 +389,6 @@ class DNDSwitch(AlexaMediaSwitch):
             "set_dnd_state",
             "do not disturb",  # Keep original suffix for backward compatibility
         )
-
-    @property
-    def icon(self):
-        """Return the icon of the switch."""
-        return super()._icon("mdi:minus-circle", "mdi:minus-circle-off")
-
-    @property
-    def entity_category(self):
-        """Return the entity category of the switch."""
-        return EntityCategory.CONFIG
 
     def _handle_event(self, event):
         """Handle events."""
@@ -386,43 +417,23 @@ class DNDSwitch(AlexaMediaSwitch):
 class ShuffleSwitch(AlexaMediaSwitch):
     """Representation of a Alexa Media Shuffle switch."""
 
-    _attr_translation_key = "shuffle"
+    entity_description = SHUFFLE_SWITCH_DESCRIPTION
 
     def __init__(self, client):
         """Initialize the Alexa Switch."""
         # Class info
         super().__init__(client, "shuffle", "shuffle", "shuffle")
 
-    @property
-    def icon(self):
-        """Return the icon of the switch."""
-        return super()._icon("mdi:shuffle", "mdi:shuffle-disabled")
-
-    @property
-    def entity_category(self):
-        """Return the entity category of the switch."""
-        return EntityCategory.CONFIG
-
 
 class RepeatSwitch(AlexaMediaSwitch):
     """Representation of a Alexa Media Repeat switch."""
 
-    _attr_translation_key = "repeat"
+    entity_description = REPEAT_SWITCH_DESCRIPTION
 
     def __init__(self, client):
         """Initialize the Alexa Switch."""
         # Class info
         super().__init__(client, "repeat_state", "repeat", "repeat")
-
-    @property
-    def icon(self):
-        """Return the icon of the switch."""
-        return super()._icon("mdi:repeat", "mdi:repeat-off")
-
-    @property
-    def entity_category(self):
-        """Return the entity category of the switch."""
-        return EntityCategory.CONFIG
 
 
 class SmartSwitch(CoordinatorEntity, SwitchDevice):

@@ -7,6 +7,9 @@ from homeassistant.helpers.entity import EntityCategory
 
 from custom_components.alexa_media.const import DATA_ALEXAMEDIA
 from custom_components.alexa_media.switch import (
+    DND_SWITCH_DESCRIPTION,
+    REPEAT_SWITCH_DESCRIPTION,
+    SHUFFLE_SWITCH_DESCRIPTION,
     AlexaMediaSwitch,
     DNDSwitch,
     RepeatSwitch,
@@ -57,6 +60,40 @@ def test_dnd_switch_off_icon():
     switch = DNDSwitch(_client(value=False))
     assert switch.is_on is False
     assert switch.icon == "mdi:minus-circle-off"
+
+
+def test_switch_entity_descriptions_carry_metadata():
+    """Each control switch derives its metadata from a shared EntityDescription."""
+    assert DNDSwitch(_client()).entity_description is DND_SWITCH_DESCRIPTION
+    assert ShuffleSwitch(_client()).entity_description is SHUFFLE_SWITCH_DESCRIPTION
+    assert RepeatSwitch(_client()).entity_description is REPEAT_SWITCH_DESCRIPTION
+
+    for desc, tkey, icon_on, icon_off in [
+        (
+            DND_SWITCH_DESCRIPTION,
+            "do_not_disturb",
+            "mdi:minus-circle",
+            "mdi:minus-circle-off",
+        ),
+        (SHUFFLE_SWITCH_DESCRIPTION, "shuffle", "mdi:shuffle", "mdi:shuffle-disabled"),
+        (REPEAT_SWITCH_DESCRIPTION, "repeat", "mdi:repeat", "mdi:repeat-off"),
+    ]:
+        assert desc.translation_key == tkey
+        assert desc.entity_category == EntityCategory.CONFIG
+        assert desc.icon_on == icon_on
+        assert desc.icon_off == icon_off
+
+
+def test_switch_unique_id_independent_of_description_key():
+    """unique_id derives from the client serial + suffix, not the description key.
+
+    Regression guard: the EntityDescription refactor must not let the new
+    description ``key`` ("dnd"/"shuffle"/"repeat") leak into unique_id, which
+    would silently rename established entities.
+    """
+    assert DNDSwitch(_client(unique_id="ABC")).unique_id == "ABC_do not disturb"
+    assert ShuffleSwitch(_client(unique_id="ABC")).unique_id == "ABC_shuffle"
+    assert RepeatSwitch(_client(unique_id="ABC")).unique_id == "ABC_repeat"
 
 
 def test_switch_unavailable_when_property_none():
