@@ -100,6 +100,13 @@ NOTIFICATION_COOLDOWN = 60
 NOTIFY_REFRESH_BACKOFF = 15.0
 NOTIFY_REFRESH_MAX_RETRIES = 3
 
+# Reauth tolerance. A relogin requested within this window of the last successful
+# login can be a genuine login loop OR just transient API/auth flakiness right
+# after startup (e.g. a single GraphQL "Unauthenticated" response). Allow a few
+# automatic relogin attempts to absorb the latter before demanding a manual login.
+REAUTH_RAPID_RELOGIN_WINDOW_S = 60
+REAUTH_MAX_AUTO_ATTEMPTS = 3
+
 # push-health magic numbers
 HTTP2_ERROR_THRESHOLD = 5
 LAST_PUSH_INACTIVITY_SECONDS = 600.0
