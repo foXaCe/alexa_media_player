@@ -10,7 +10,7 @@ inspects ``args[0]``.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 import logging
 from typing import TYPE_CHECKING
 
@@ -39,7 +39,7 @@ async def schedule_update_dnd_state(ctx: SetupContext, email: str) -> None:
                     return
 
                 last_run = ctx.last_dnd_update_times.get(email)
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
 
                 remaining = 0.0
                 if last_run is not None:
@@ -61,7 +61,7 @@ async def schedule_update_dnd_state(ctx: SetupContext, email: str) -> None:
                     return
 
                 last_run = ctx.last_dnd_update_times.get(email)
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 if last_run is not None and (now - last_run) < MIN_TIME_BETWEEN_SCANS:
                     # Another update snuck in or timing was slightly early; loop and re-evaluate.
                     continue
@@ -104,7 +104,7 @@ async def update_dnd_state(login_obj: AlexaLogin, ctx: SetupContext) -> None:
     """Update the DND state on websocket DND combo event."""
     hass = ctx.hass
     email = login_obj.email
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     async with ctx.dnd_update_lock:
         last_run = ctx.last_dnd_update_times.get(email)
