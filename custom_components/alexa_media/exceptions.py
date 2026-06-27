@@ -1,5 +1,7 @@
 """Alexa Media Exceptions"""
 
+from __future__ import annotations
+
 
 class EmptyDataException(Exception):
     """Empty data exception"""

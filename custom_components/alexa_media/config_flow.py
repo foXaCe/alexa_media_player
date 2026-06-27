@@ -7,6 +7,8 @@ For more details about this platform, please refer to the documentation at
 https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers-needed/58639
 """
 
+from __future__ import annotations
+
 from asyncio import sleep
 from collections import OrderedDict
 import datetime
@@ -107,7 +109,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
 
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
     proxy: AlexaProxy = None
-    proxy_view: "AlexaMediaAuthorizationProxyView" = None
+    proxy_view: AlexaMediaAuthorizationProxyView = None
 
     def _update_ord_dict(self, old_dict: OrderedDict, new_dict: dict) -> OrderedDict:
         result: OrderedDict = OrderedDict()
