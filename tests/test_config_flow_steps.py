@@ -49,6 +49,7 @@ from custom_components.alexa_media.const import (
     CONF_TOTP_REGISTER,
     DATA_ALEXAMEDIA,
     DOMAIN,
+    REAUTH_MAX_AUTO_ATTEMPTS,
 )
 
 _GET_URL = "custom_components.alexa_media.config_flow.get_url"
@@ -283,15 +284,46 @@ async def test_step_process_without_input_tests_login():
 # --------------------------------------------------------------------------- #
 
 
-async def test_reauth_recent_login_requires_manual():
+@patch(_SLEEP, new_callable=AsyncMock)
+async def test_reauth_recent_login_retries_automatically(_mock_sleep):
+    """A recent relogin within the budget retries automatically, not manually."""
     flow = _make_flow()
     flow.login = _login_mock()
     flow.login.stats = {"login_timestamp": datetime.datetime.now()}
+    flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"] = {}
+    flow.async_step_user_legacy = AsyncMock(return_value={"type": "form"})
+    await flow.async_step_reauth({CONF_EMAIL: "a@example.com", CONF_URL: "amazon.com"})
+    # First rapid attempt -> automatic retry, counter incremented (not a manual form).
+    flow.async_step_user_legacy.assert_awaited_once()
+    assert (
+        flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"][
+            "reauth_rapid_attempts"
+        ]
+        == 1
+    )
+
+
+async def test_reauth_recent_login_requires_manual_after_budget():
+    """Once the automatic-retry budget is spent, a recent relogin needs manual login."""
+    flow = _make_flow()
+    flow.login = _login_mock()
+    flow.login.stats = {"login_timestamp": datetime.datetime.now()}
+    # Pre-load the counter at the ceiling so the next rapid relogin escalates.
+    flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"] = {
+        "reauth_rapid_attempts": REAUTH_MAX_AUTO_ATTEMPTS,
+    }
     flow.async_show_form = MagicMock(return_value={"type": "form"})
     await flow.async_step_reauth({CONF_EMAIL: "a@example.com", CONF_URL: "amazon.com"})
     assert (
         flow.async_show_form.call_args.kwargs["description_placeholders"]["message"]
         == "REAUTH"
+    )
+    # Escalating to manual resets the counter for the next recovery cycle.
+    assert (
+        flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"][
+            "reauth_rapid_attempts"
+        ]
+        == 0
     )
 
 
@@ -299,10 +331,33 @@ async def test_reauth_recent_login_requires_manual():
 async def test_reauth_old_login_attempts_automatic(_mock_sleep):
     flow = _make_flow()
     flow.async_step_user_legacy = AsyncMock(return_value={"type": "form"})
-    # login is None -> seconds_since_login defaults to 60 -> automatic path
+    # login is None -> seconds_since_login defaults to the window -> automatic path
     await flow.async_step_reauth({CONF_EMAIL: "a@example.com", CONF_URL: "amazon.com"})
     _mock_sleep.assert_awaited_once()
     flow.async_step_user_legacy.assert_awaited_once()
+
+
+@patch(_SLEEP, new_callable=AsyncMock)
+async def test_reauth_old_login_resets_rapid_counter(_mock_sleep):
+    """A relogin outside the window clears any accumulated rapid-attempt counter."""
+    flow = _make_flow()
+    flow.login = _login_mock()
+    # login_timestamp well outside the rapid window -> automatic path + reset.
+    flow.login.stats = {
+        "login_timestamp": datetime.datetime.now() - timedelta(minutes=5)
+    }
+    flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"] = {
+        "reauth_rapid_attempts": 2,
+    }
+    flow.async_step_user_legacy = AsyncMock(return_value={"type": "form"})
+    await flow.async_step_reauth({CONF_EMAIL: "a@example.com", CONF_URL: "amazon.com"})
+    flow.async_step_user_legacy.assert_awaited_once()
+    assert (
+        flow.hass.data[DATA_ALEXAMEDIA]["accounts"]["a@example.com"][
+            "reauth_rapid_attempts"
+        ]
+        == 0
+    )
 
 
 # --------------------------------------------------------------------------- #

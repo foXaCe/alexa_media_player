@@ -77,6 +77,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ISSUE_URL,
+    REAUTH_MAX_AUTO_ATTEMPTS,
+    REAUTH_RAPID_RELOGIN_WINDOW_S,
 )
 from .helpers import calculate_uuid, redact_sensitive
 
@@ -642,21 +644,46 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 ].get("login_obj")
             except KeyError:
                 self.login = None
-        seconds_since_login: int = (
-            (datetime.datetime.now() - self.login.stats["login_timestamp"]).seconds
+        accounts = self.hass.data.get(DATA_ALEXAMEDIA, {}).get("accounts", {})
+        account_dict = accounts.get(self.config[CONF_EMAIL])
+        seconds_since_login: float = (
+            (
+                datetime.datetime.now() - self.login.stats["login_timestamp"]
+            ).total_seconds()
             if self.login
-            else 60
+            else REAUTH_RAPID_RELOGIN_WINDOW_S
         )
-        if seconds_since_login < 60:
+        if seconds_since_login < REAUTH_RAPID_RELOGIN_WINDOW_S:
+            # A relogin this soon after a successful login may be a genuine login
+            # loop, but it is just as often transient post-startup API/auth flakiness
+            # (e.g. a single GraphQL "Unauthenticated" response). Retry automatically
+            # a few times to absorb that before demanding a manual login.
+            rapid_attempts = (
+                account_dict.get("reauth_rapid_attempts", 0) if account_dict else 0
+            ) + 1
+            if account_dict is not None:
+                account_dict["reauth_rapid_attempts"] = rapid_attempts
+            if rapid_attempts > REAUTH_MAX_AUTO_ATTEMPTS:
+                _LOGGER.debug(
+                    "Relogin requested %s times within %ss; manual login required",
+                    rapid_attempts,
+                    REAUTH_RAPID_RELOGIN_WINDOW_S,
+                )
+                if account_dict is not None:
+                    account_dict["reauth_rapid_attempts"] = 0
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=vol.Schema(reauth_schema),
+                    description_placeholders={"message": "REAUTH"},
+                )
             _LOGGER.debug(
-                "Relogin requested within %s seconds; manual login required",
-                seconds_since_login,
+                "Relogin requested within %ss (automatic attempt %s/%s); retrying",
+                round(seconds_since_login),
+                rapid_attempts,
+                REAUTH_MAX_AUTO_ATTEMPTS,
             )
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(reauth_schema),
-                description_placeholders={"message": "REAUTH"},
-            )
+        elif account_dict is not None:
+            account_dict["reauth_rapid_attempts"] = 0
         _LOGGER.debug("Attempting automatic relogin")
         await sleep(15)
         return await self.async_step_user_legacy(self.config)
@@ -711,6 +738,11 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 self.hass.data[DATA_ALEXAMEDIA]["accounts"][self.config[CONF_EMAIL]][
                     "login_obj"
                 ] = self.login
+                # Login recovered: clear the rapid-relogin tolerance counter so a
+                # future issue gets the full automatic-retry budget again.
+                self.hass.data[DATA_ALEXAMEDIA]["accounts"][self.config[CONF_EMAIL]][
+                    "reauth_rapid_attempts"
+                ] = 0
                 self.hass.data[DATA_ALEXAMEDIA]["config_flows"][
                     f"{email} - {login.url}"
                 ] = None
