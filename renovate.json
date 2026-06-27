@@ -13,6 +13,18 @@
   "pre-commit": {
     "enabled": true
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the Python runtime deps pinned with == in the HA integration manifest.json (alexapy, ...)",
+      "fileMatch": ["custom_components/alexa_media/manifest\\.json"],
+      "matchStrings": [
+        "\"(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)==(?<currentValue>[0-9][^\"]*)\""
+      ],
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
+    }
+  ],
   "packageRules": [
     {
       "description": "Auto-merge all GitHub Actions updates (incl. major); CI gates them",
@@ -39,6 +51,13 @@
       "description": "Always review Home Assistant updates manually",
       "matchDepNames": ["homeassistant"],
       "labels": ["dependencies", "homeassistant"],
+      "automerge": false
+    },
+    {
+      "description": "alexapy is the core Amazon API client; group its manifest + test pins into one PR and review manually (CI mocks alexapy, so it cannot exercise the live API)",
+      "matchDepNames": ["alexapy"],
+      "groupName": "alexapy",
+      "labels": ["dependencies", "python", "alexapy"],
       "automerge": false
     }
   ],
