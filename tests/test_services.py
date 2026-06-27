@@ -1,7 +1,10 @@
 """Tests for services.py - registration, handlers and translated error paths."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from alexapy import AlexapyLoginError
+from alexapy.errors import AlexapyConnectionError
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import pytest
 
@@ -280,3 +283,212 @@ async def test_last_call_handler_filters_by_requested_email():
     hass.async_create_task.side_effect = _create_task
     await svc.last_call_handler(_make_call({"email": ["a@example.com"]}))
     assert len(scheduled) == 1
+
+
+# --------------------------------------------------------------------------- #
+# last_call_handler - the scheduled _run_update_last_called coroutine body
+# --------------------------------------------------------------------------- #
+
+
+def _patch_create_task(hass):
+    """Make hass.async_create_task spawn a real asyncio task we can await."""
+    created: list = []
+
+    def _create(coro, name=None):
+        task = asyncio.ensure_future(coro)
+        created.append(task)
+        return task
+
+    hass.async_create_task.side_effect = _create
+    return created
+
+
+async def test_last_call_handler_runs_injected_update():
+    injected = AsyncMock()
+    account = {"login_obj": MagicMock()}
+    svc, hass = _make_services(
+        {"a@example.com": account}, functions={"update_last_called": injected}
+    )
+    created = _patch_create_task(hass)
+    await svc.last_call_handler(_make_call({"email": []}))
+    await asyncio.gather(*created)
+    injected.assert_awaited_once()
+    # finally block cleans up the stored task handle
+    assert "service_update_last_called_task" not in account
+
+
+@patch(
+    "custom_components.alexa_media.setup.last_called._async_update_last_called_global",
+    new_callable=AsyncMock,
+)
+async def test_last_call_handler_runs_global_fallback(mock_global):
+    account = {"login_obj": MagicMock()}
+    svc, hass = _make_services({"a@example.com": account})  # no injected closure
+    created = _patch_create_task(hass)
+    await svc.last_call_handler(_make_call({"email": []}))
+    await asyncio.gather(*created)
+    mock_global.assert_awaited_once()
+    assert "service_update_last_called_task" not in account
+
+
+@patch("custom_components.alexa_media.services.report_relogin_required")
+async def test_last_call_handler_login_error_reports_relogin(mock_report):
+    injected = AsyncMock(side_effect=AlexapyLoginError("nope"))
+    account = {"login_obj": MagicMock()}
+    svc, hass = _make_services(
+        {"a@example.com": account}, functions={"update_last_called": injected}
+    )
+    created = _patch_create_task(hass)
+    await svc.last_call_handler(_make_call({"email": []}))
+    await asyncio.gather(*created)
+    mock_report.assert_called_once()
+
+
+async def test_last_call_handler_connection_error_is_caught():
+    injected = AsyncMock(side_effect=AlexapyConnectionError())
+    account = {"login_obj": MagicMock()}
+    svc, hass = _make_services(
+        {"a@example.com": account}, functions={"update_last_called": injected}
+    )
+    created = _patch_create_task(hass)
+    await svc.last_call_handler(_make_call({"email": []}))
+    await asyncio.gather(*created)  # error is logged, not raised
+    injected.assert_awaited_once()
+    assert "service_update_last_called_task" not in account
+
+
+async def test_last_call_handler_cancelled_propagates():
+    injected = AsyncMock(side_effect=asyncio.CancelledError())
+    account = {"login_obj": MagicMock()}
+    svc, hass = _make_services(
+        {"a@example.com": account}, functions={"update_last_called": injected}
+    )
+    created = _patch_create_task(hass)
+    await svc.last_call_handler(_make_call({"email": []}))
+    with pytest.raises(asyncio.CancelledError):
+        await created[0]
+
+
+async def test_last_call_handler_cancels_existing_running_task():
+    existing = MagicMock()
+    existing.done.return_value = False
+    account = {
+        "login_obj": MagicMock(),
+        "service_update_last_called_task": existing,
+    }
+    svc, hass = _make_services({"a@example.com": account})
+
+    def _create_task(coro, name=None):
+        coro.close()  # don't run the replacement task
+        return MagicMock(done=lambda: True)
+
+    hass.async_create_task.side_effect = _create_task
+    await svc.last_call_handler(_make_call({"email": []}))
+    existing.cancel.assert_called_once()
+
+
+# --------------------------------------------------------------------------- #
+# get_history_records - empty results, per-account error handling, no state
+# --------------------------------------------------------------------------- #
+
+
+def _history_entry(platform=DOMAIN, unique_id="SERIAL123"):
+    entry = MagicMock()
+    entry.platform = platform
+    entry.unique_id = unique_id
+    return entry
+
+
+@patch("custom_components.alexa_media.services.AlexaAPI")
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_empty_records_returns_early(mock_er, mock_api):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    mock_api.get_customer_history_records = AsyncMock(return_value=[])
+    svc, hass = _make_services({"a@example.com": {"login_obj": MagicMock()}})
+    state = MagicMock()
+    state.state = "idle"
+    state.attributes = {}
+    hass.states.get.return_value = state
+    result = await svc.get_history_records(
+        _make_call({"entity_id": "media_player.x", "entries": 5})
+    )
+    assert result is True
+    new_attributes = hass.states.async_set.call_args.args[2]
+    assert new_attributes["history_records"] == []
+
+
+@patch("custom_components.alexa_media.services.AlexaAPI")
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_connection_error_is_logged(mock_er, mock_api):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    mock_api.get_customer_history_records = AsyncMock(
+        side_effect=AlexapyConnectionError()
+    )
+    svc, hass = _make_services({"a@example.com": {"login_obj": MagicMock()}})
+    state = MagicMock()
+    state.state = "idle"
+    state.attributes = {}
+    hass.states.get.return_value = state
+    result = await svc.get_history_records(
+        _make_call({"entity_id": "media_player.x", "entries": 5})
+    )
+    assert result is True
+
+
+@patch("custom_components.alexa_media.services.report_relogin_required")
+@patch("custom_components.alexa_media.services.AlexaAPI")
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_login_error_reports_relogin(mock_er, mock_api, mock_report):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    mock_api.get_customer_history_records = AsyncMock(side_effect=AlexapyLoginError())
+    svc, hass = _make_services({"a@example.com": {"login_obj": MagicMock()}})
+    state = MagicMock()
+    state.state = "idle"
+    state.attributes = {}
+    hass.states.get.return_value = state
+    result = await svc.get_history_records(
+        _make_call({"entity_id": "media_player.x", "entries": 5})
+    )
+    assert result is True
+    mock_report.assert_called_once()
+
+
+@patch("custom_components.alexa_media.services.AlexaAPI")
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_cancelled_propagates(mock_er, mock_api):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    mock_api.get_customer_history_records = AsyncMock(
+        side_effect=asyncio.CancelledError()
+    )
+    svc, _ = _make_services({"a@example.com": {"login_obj": MagicMock()}})
+    with pytest.raises(asyncio.CancelledError):
+        await svc.get_history_records(
+            _make_call({"entity_id": "media_player.x", "entries": 5})
+        )
+
+
+@patch("custom_components.alexa_media.services.AlexaAPI")
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_unexpected_error_is_logged(mock_er, mock_api):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    mock_api.get_customer_history_records = AsyncMock(side_effect=ValueError("boom"))
+    svc, hass = _make_services({"a@example.com": {"login_obj": MagicMock()}})
+    state = MagicMock()
+    state.state = "idle"
+    state.attributes = {}
+    hass.states.get.return_value = state
+    result = await svc.get_history_records(
+        _make_call({"entity_id": "media_player.x", "entries": 5})
+    )
+    assert result is True
+
+
+@patch("custom_components.alexa_media.services.er")
+async def test_get_history_no_state_raises(mock_er):
+    mock_er.async_get.return_value.async_get.return_value = _history_entry()
+    svc, hass = _make_services({})  # no accounts -> history loop is skipped
+    hass.states.get.return_value = None
+    with pytest.raises(HomeAssistantError):
+        await svc.get_history_records(
+            _make_call({"entity_id": "media_player.x", "entries": 5})
+        )

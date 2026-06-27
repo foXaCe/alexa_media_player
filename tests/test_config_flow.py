@@ -1,11 +1,71 @@
 """Tests for config_flow module."""
 
+import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from aiohttp import InvalidURL, web
+from alexapy import AlexapyPyotpInvalidKey
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_URL
+from homeassistant.exceptions import Unauthorized
+from homeassistant.helpers.network import NoURLAvailableError
 import pytest
+from yarl import URL
 
-from custom_components.alexa_media.config_flow import AlexaMediaFlowHandler
-from custom_components.alexa_media.const import DATA_ALEXAMEDIA
+from custom_components.alexa_media.config_flow import (
+    AlexaMediaAuthorizationProxyView,
+    AlexaMediaFlowHandler,
+    OptionsFlowHandler,
+)
+from custom_components.alexa_media.const import (
+    CONF_DEBUG,
+    CONF_EXCLUDE_DEVICES,
+    CONF_HASS_URL,
+    CONF_OTPSECRET,
+    CONF_SECURITYCODE,
+    DATA_ALEXAMEDIA,
+)
+
+_GET_URL = "custom_components.alexa_media.config_flow.get_url"
+_ALEXA_PROXY = "custom_components.alexa_media.config_flow.AlexaProxy"
+_SLEEP = "custom_components.alexa_media.config_flow.sleep"
+_DISMISS = (
+    "custom_components.alexa_media.config_flow.async_dismiss_persistent_notification"
+)
+_CLIENT_SESSION = "custom_components.alexa_media.config_flow.ClientSession"
+
+
+def _make_flow():
+    """Build a flow handler with a minimal mocked hass."""
+    flow = AlexaMediaFlowHandler()
+    flow.hass = MagicMock()
+    flow.hass.data = {DATA_ALEXAMEDIA: {"accounts": {}, "config_flows": {}}}
+    flow.hass.config_entries.async_entries.return_value = []
+    return flow
+
+
+def _login_mock(email="a@example.com", url="amazon.com", status=None):
+    login = MagicMock()
+    login.email = email
+    login.url = url
+    login.status = status if status is not None else {}
+    login.session.closed = False
+    return login
+
+
+def _patch_client_session(mock_cs, *, status=None, error=None):
+    """Configure a mocked aiohttp ClientSession async context manager."""
+    session = MagicMock()
+    if error is not None:
+        session.get.side_effect = error
+    else:
+        resp = MagicMock()
+        resp.status = status
+        get_cm = MagicMock()
+        get_cm.__aenter__ = AsyncMock(return_value=resp)
+        get_cm.__aexit__ = AsyncMock(return_value=False)
+        session.get.return_value = get_cm
+    mock_cs.return_value.__aenter__ = AsyncMock(return_value=session)
+    mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
 
 
 class TestReauthReload:
@@ -352,3 +412,315 @@ class TestConfigFlowInvalidOtpKeyDataSchema:
             "step_id='user' not found in exception handler. "
             "The handler should return users to the user step for correction."
         )
+
+
+# --------------------------------------------------------------------------- #
+# async_step_user - error/edge branches not exercised by the happy-path tests
+# --------------------------------------------------------------------------- #
+
+
+@patch(_GET_URL, side_effect=NoURLAvailableError)
+async def test_step_user_no_url_available_forces_user_form(_mock_url):
+    """When no HA URL is detectable, both fallbacks fire and the user form shows."""
+    flow = _make_flow()
+    flow.login = _login_mock()  # existing login -> skip AlexaLogin creation
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    # user_input without CONF_HASS_URL -> get_url(prefer_external=True) is attempted
+    await flow.async_step_user(
+        {
+            CONF_EMAIL: "a@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_URL: "amazon.com",
+            CONF_DEBUG: False,
+        }
+    )
+    assert flow.async_show_form.call_args.kwargs["step_id"] == "user"
+
+
+@patch(_CLIENT_SESSION)
+@patch(_GET_URL, return_value="http://hass.local")
+async def test_step_user_existing_login_updates_credentials(_mock_url, mock_cs):
+    """An existing, open login object is reused and its credentials refreshed."""
+    _patch_client_session(mock_cs, status=200)
+    flow = _make_flow()
+    flow.login = _login_mock()
+    flow.config[CONF_OTPSECRET] = "ABCDEFGH"
+    flow.async_step_start_proxy = AsyncMock(return_value={"type": "external"})
+    result = await flow.async_step_user(
+        {
+            CONF_EMAIL: "new@example.com",
+            CONF_PASSWORD: "newpw",
+            CONF_URL: "amazon.com",
+            CONF_DEBUG: False,
+            CONF_HASS_URL: "http://good.url",
+        }
+    )
+    assert result == {"type": "external"}
+    assert flow.login.email == "new@example.com"
+    assert flow.login.password == "newpw"
+    flow.login.set_totp.assert_called_once_with("ABCDEFGH")
+
+
+@patch(_CLIENT_SESSION)
+@patch(_GET_URL, return_value="http://hass.local")
+async def test_step_user_invalid_url_shows_proxy_warning(_mock_url, mock_cs):
+    """An aiohttp InvalidURL while probing hass_url routes to the proxy warning."""
+    _patch_client_session(mock_cs, error=InvalidURL("http://bad.url"))
+    flow = _make_flow()
+    flow.login = _login_mock()
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    await flow.async_step_user(
+        {
+            CONF_EMAIL: "a@example.com",
+            CONF_PASSWORD: "pw",
+            CONF_URL: "amazon.com",
+            CONF_DEBUG: False,
+            CONF_HASS_URL: "http://bad.url",
+        }
+    )
+    assert flow.async_show_form.call_args.kwargs["step_id"] == "proxy_warning"
+
+
+# --------------------------------------------------------------------------- #
+# async_step_start_proxy - ValueError + missing-session branches
+# --------------------------------------------------------------------------- #
+
+
+@patch(_ALEXA_PROXY, side_effect=ValueError("bad url"))
+async def test_start_proxy_value_error_shows_user_form(_mock_proxy):
+    flow = _make_flow()
+    flow.login = _login_mock()
+    flow.config[CONF_HASS_URL] = "http://hass.local"
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    await flow.async_step_start_proxy()
+    assert flow.async_show_form.call_args.kwargs["errors"] == {"base": "invalid_url"}
+
+
+async def test_start_proxy_missing_session_with_existing_view():
+    flow = _make_flow()
+    flow.flow_id = "flow-x"
+    flow.login = _login_mock()
+    flow.login._session = MagicMock()
+    flow.config[CONF_HASS_URL] = "http://hass.local"
+    proxy = MagicMock()
+    proxy.session = None  # triggers the "no session found" warning branch
+    proxy.access_url.return_value = URL("http://hass.local/proxy")
+    proxy.all_handler = MagicMock()
+    flow.proxy = proxy  # pre-existing proxy -> skip creation
+    flow.proxy_view = MagicMock()  # pre-existing view -> reuse branch
+    flow.async_external_step = MagicMock(return_value={"type": "external"})
+    result = await flow.async_step_start_proxy()
+    assert result == {"type": "external"}
+    assert flow.proxy_view.handler is proxy.all_handler
+
+
+# --------------------------------------------------------------------------- #
+# async_step_user_legacy - reused login + OTP + error branches
+# --------------------------------------------------------------------------- #
+
+
+async def test_user_legacy_existing_login_attempts_login():
+    flow = _make_flow()
+    flow.login = _login_mock(status={})  # falsy status -> performs a fresh login()
+    flow.login.login = AsyncMock()
+    flow._test_login = AsyncMock(return_value={"type": "create_entry"})
+    await flow.async_step_user_legacy(
+        {
+            CONF_EMAIL: "a@example.com",
+            CONF_URL: "amazon.com",
+            CONF_PASSWORD: "pw",
+            CONF_DEBUG: False,
+        }
+    )
+    flow.login.login.assert_awaited_once()
+    flow._test_login.assert_awaited_once()
+
+
+async def test_user_legacy_otp_token_falsy_shows_2fa_error():
+    flow = _make_flow()
+    flow.login = _login_mock()
+    flow.login.get_totp_token.return_value = ""  # no token -> 2fa key invalid form
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    await flow.async_step_user_legacy(
+        {
+            CONF_EMAIL: "a@example.com",
+            CONF_URL: "amazon.com",
+            CONF_PASSWORD: "pw",
+            CONF_DEBUG: False,
+            CONF_OTPSECRET: "BADKEY",
+        }
+    )
+    assert flow.async_show_form.call_args.kwargs["errors"] == {
+        "base": "2fa_key_invalid"
+    }
+
+
+async def test_user_legacy_pyotp_invalid_key_shows_form():
+    flow = _make_flow()
+    flow.login = _login_mock(status={})
+    flow.login.login = AsyncMock(side_effect=AlexapyPyotpInvalidKey)
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    await flow.async_step_user_legacy(
+        {
+            CONF_EMAIL: "a@example.com",
+            CONF_URL: "amazon.com",
+            CONF_PASSWORD: "pw",
+            CONF_DEBUG: False,
+        }
+    )
+    assert flow.async_show_form.call_args.kwargs["errors"] == {
+        "base": "2fa_key_invalid"
+    }
+
+
+async def test_user_legacy_unknown_error_reraises_in_debug():
+    flow = _make_flow()
+    flow.login = _login_mock(status={})
+    flow.login.login = AsyncMock(side_effect=RuntimeError("boom"))
+    with pytest.raises(RuntimeError):
+        await flow.async_step_user_legacy(
+            {
+                CONF_EMAIL: "a@example.com",
+                CONF_URL: "amazon.com",
+                CONF_PASSWORD: "pw",
+                CONF_DEBUG: True,  # debug on -> exception is re-raised
+            }
+        )
+
+
+# --------------------------------------------------------------------------- #
+# _test_login - reauth key pop + securitycode/error-message auto resubmission
+# --------------------------------------------------------------------------- #
+
+
+async def test_test_login_reauth_pops_transient_keys():
+    flow = _make_flow()
+    login = _login_mock(status={"login_successful": True})
+    login.access_token = "t"  # noqa: S105
+    login.refresh_token = "r"  # noqa: S105
+    login.expires_in = 1
+    login.mac_dms = "m"
+    login.code_verifier = "v"
+    login.authorization_code = "c"
+    flow.login = login
+    flow.config[CONF_EMAIL] = "a@example.com"
+    flow.config["reauth"] = True
+    flow.config[CONF_SECURITYCODE] = "111"
+    flow.config["hass_url"] = "http://x"
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "entry-1"
+    flow.async_set_unique_id = AsyncMock(return_value=mock_entry)
+    flow.hass.config_entries.async_update_entry = MagicMock()
+    flow.hass.config_entries.async_reload = AsyncMock()
+    flow.hass.bus.async_fire = MagicMock()
+    flow.async_abort = MagicMock(return_value={"type": "abort"})
+    with patch(_DISMISS):
+        await flow._test_login()
+    assert "reauth" not in flow.config
+    assert CONF_SECURITYCODE not in flow.config
+    assert "hass_url" not in flow.config
+    flow.async_abort.assert_called_once_with(reason="reauth_successful")
+
+
+@patch(_SLEEP, new_callable=AsyncMock)
+async def test_test_login_securitycode_uses_stored_code(_mock_sleep):
+    flow = _make_flow()
+    flow.login = _login_mock(status={"securitycode_required": True})
+    flow.login.get_totp_token.return_value = ""  # no generated code -> use stored
+    flow.securitycode = "654321"
+    flow.async_step_user_legacy = AsyncMock(return_value={"type": "form"})
+    await flow._test_login()
+    flow.async_step_user_legacy.assert_awaited_once()
+    assert (
+        flow.async_step_user_legacy.await_args.kwargs["user_input"][CONF_SECURITYCODE]
+        == "654321"
+    )
+
+
+@patch(_SLEEP, new_callable=AsyncMock)
+async def test_test_login_invalid_email_message_auto_resubmits(_mock_sleep):
+    flow = _make_flow()
+    flow.login = _login_mock(
+        status={
+            "error_message": (
+                "There was a problem\n            "
+                "Enter a valid email or mobile number\n          "
+            )
+        }
+    )
+    flow.async_step_user_legacy = AsyncMock(return_value={"type": "form"})
+    await flow._test_login()
+    _mock_sleep.assert_awaited_once()
+    flow.async_step_user_legacy.assert_awaited_once()
+
+
+# --------------------------------------------------------------------------- #
+# _save_user_input_to_config / OptionsFlowHandler legacy guard
+# --------------------------------------------------------------------------- #
+
+
+def test_save_user_input_exclude_devices_plain_string():
+    flow = _make_flow()
+    flow._save_user_input_to_config({CONF_EXCLUDE_DEVICES: "Echo Living Room"})
+    assert flow.config[CONF_EXCLUDE_DEVICES] == "Echo Living Room"
+
+
+def test_options_flow_legacy_ha_assigns_config_entry():
+    """On HA < 2024.12 the flow assigns config_entry directly.
+
+    On the installed (modern) HA, config_entry is a read-only property, so the
+    legacy assignment raises AttributeError -- which still executes the guarded
+    line for coverage of the version-compat branch.
+    """
+    with patch("custom_components.alexa_media.config_flow.HAVERSION", "2024.11.0"):
+        with pytest.raises(AttributeError):
+            OptionsFlowHandler(MagicMock())
+
+
+# --------------------------------------------------------------------------- #
+# AlexaMediaAuthorizationProxyView.check_auth - remaining branches
+# --------------------------------------------------------------------------- #
+
+
+async def test_proxy_view_unauthorized_when_flow_not_found():
+    AlexaMediaAuthorizationProxyView.reset()
+    view = AlexaMediaAuthorizationProxyView(AsyncMock())
+    hass = MagicMock()
+    hass.config_entries.flow.async_progress.return_value = [{"flow_id": "other"}]
+    request = MagicMock()
+    request.remote = "3.3.3.3"
+    request.app = {"hass": hass}
+    request.url.query = {"config_flow_id": "wanted"}  # present but no match
+    with pytest.raises(Unauthorized):
+        await view.get(request)
+
+
+async def test_proxy_view_debug_logs_request_and_response_headers():
+    result_obj = MagicMock(headers={"set-cookie": "secret", "Y": "z"}, status=200)
+    handler = AsyncMock(return_value=result_obj)
+    AlexaMediaAuthorizationProxyView.reset()
+    AlexaMediaAuthorizationProxyView.known_ips = {"7.7.7.7": datetime.datetime.now()}
+    view = AlexaMediaAuthorizationProxyView(handler)
+    request = MagicMock()
+    request.remote = "7.7.7.7"  # known ip -> auth block skipped
+    request.app = {"hass": MagicMock()}
+    request.method = "GET"
+    request.headers = {"Authorization": "secret", "X-Foo": "bar"}
+    # Patching the logger makes isEnabledFor(DEBUG) truthy -> header-redaction runs.
+    with patch("custom_components.alexa_media.config_flow._LOGGER"):
+        result = await view.get(request)
+    handler.assert_awaited_once()
+    assert result is result_obj
+
+
+async def test_proxy_view_reraises_http_exception():
+    handler = AsyncMock(side_effect=web.HTTPFound(location="/redirect"))
+    AlexaMediaAuthorizationProxyView.reset()
+    AlexaMediaAuthorizationProxyView.known_ips = {"4.4.4.4": datetime.datetime.now()}
+    view = AlexaMediaAuthorizationProxyView(handler)
+    request = MagicMock()
+    request.remote = "4.4.4.4"
+    request.app = {"hass": MagicMock()}
+    request.method = "GET"
+    with pytest.raises(web.HTTPException):
+        await view.get(request)
