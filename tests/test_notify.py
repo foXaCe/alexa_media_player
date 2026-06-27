@@ -3,12 +3,24 @@
 Tests the notification service using pytest-homeassistant-custom-component.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from homeassistant.components.notify import SERVICE_NOTIFY
+from homeassistant.const import CONF_EMAIL
 import pytest
+import voluptuous as vol
 
-from custom_components.alexa_media.const import DATA_ALEXAMEDIA
-from custom_components.alexa_media.notify import AlexaNotificationService
+from custom_components.alexa_media.const import (
+    CONF_QUEUE_DELAY,
+    DATA_ALEXAMEDIA,
+    DEFAULT_QUEUE_DELAY,
+    DOMAIN,
+)
+from custom_components.alexa_media.notify import (
+    AlexaNotificationService,
+    async_get_service,
+    async_unload_entry,
+)
 
 # =============================================================================
 # Tests for AlexaNotificationService.devices property
@@ -627,3 +639,639 @@ class TestAsyncSendMessageGroupExpansion:
         assert "Living Room Echo" in expanded  # plain target
         assert "media_player.echo_group" not in expanded
         assert "group.echo_players" not in expanded
+
+
+# =============================================================================
+# Tests for service construction + module entry points
+# =============================================================================
+
+
+class TestServiceConstruction:
+    """Test AlexaNotificationService.__init__."""
+
+    def test_init_sets_hass_and_last_called(self):
+        """__init__ stores hass and defaults last_called to True."""
+        hass = MagicMock()
+
+        service = AlexaNotificationService(hass)
+
+        assert service.hass is hass
+        assert service.last_called is True
+
+
+class TestAsyncGetService:
+    """Test async_get_service.
+
+    The function is wrapped by ``retry_async`` (which sleeps between retries on
+    a falsy result). Tests call ``async_get_service.__wrapped__`` to exercise
+    the undecorated body directly, avoiding the retry delays entirely.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_service_when_all_media_players_loaded(self):
+        """A service is created and stored when every device has an entity."""
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "devices": {"media_player": {"serial1": MagicMock()}},
+                        "entities": {"media_player": {"serial1": MagicMock()}},
+                    }
+                }
+            }
+        }
+
+        result = await async_get_service.__wrapped__(hass, {})
+
+        assert isinstance(result, AlexaNotificationService)
+        assert hass.data[DATA_ALEXAMEDIA]["notify_service"] is result
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_media_player_not_loaded(self):
+        """False is returned (delaying load) when a device has no entity yet."""
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "devices": {
+                            "media_player": {
+                                "serial1": MagicMock(),
+                                "serial2": MagicMock(),
+                            }
+                        },
+                        # serial2 is intentionally absent from entities.
+                        "entities": {"media_player": {"serial1": MagicMock()}},
+                    }
+                }
+            }
+        }
+
+        result = await async_get_service.__wrapped__(hass, {})
+
+        assert result is False
+        assert "notify_service" not in hass.data[DATA_ALEXAMEDIA]
+
+
+class TestAsyncUnloadEntry:
+    """Test async_unload_entry service-removal logic."""
+
+    def _make_entry(self, email="test@example.com"):
+        entry = MagicMock()
+        entry.data = {CONF_EMAIL: email}
+        return entry
+
+    @pytest.mark.asyncio
+    async def test_removes_services_and_pops_notify_service(self):
+        """Single-account unload removes per-device + domain services and state."""
+        device = MagicMock()
+        device.entity_id = "media_player.echo1"
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {"media_player": {"serial1": device}},
+                    }
+                },
+                "notify_service": MagicMock(),
+            }
+        }
+
+        result = await async_unload_entry(hass, self._make_entry())
+
+        assert result is True
+        hass.services.async_remove.assert_any_call(SERVICE_NOTIFY, f"{DOMAIN}_echo1")
+        hass.services.async_remove.assert_any_call(SERVICE_NOTIFY, DOMAIN)
+        assert "notify_service" not in hass.data[DATA_ALEXAMEDIA]
+
+    @pytest.mark.asyncio
+    async def test_skips_account_without_entities(self):
+        """A target account without an 'entities' key is skipped (continue)."""
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {"test@example.com": {}},
+            }
+        }
+
+        result = await async_unload_entry(hass, self._make_entry())
+
+        assert result is True
+        # Only the domain-wide service is removed; no per-device removal.
+        hass.services.async_remove.assert_called_once_with(SERVICE_NOTIFY, DOMAIN)
+
+    @pytest.mark.asyncio
+    async def test_skips_device_without_entity_id(self):
+        """A device whose entity_id is falsy is not removed."""
+        device = MagicMock()
+        device.entity_id = None
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {"media_player": {"serial1": device}},
+                    }
+                },
+            }
+        }
+
+        result = await async_unload_entry(hass, self._make_entry())
+
+        assert result is True
+        # No per-device removal happened; only the domain-wide removal.
+        hass.services.async_remove.assert_called_once_with(SERVICE_NOTIFY, DOMAIN)
+
+    @pytest.mark.asyncio
+    async def test_keeps_domain_service_when_other_accounts_present(self):
+        """When another account remains, the domain service is preserved."""
+        device = MagicMock()
+        device.entity_id = "media_player.echo1"
+        notify_service = MagicMock()
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {"media_player": {"serial1": device}},
+                    },
+                    "other@example.com": {
+                        "entities": {"media_player": {}},
+                    },
+                },
+                "notify_service": notify_service,
+            }
+        }
+
+        result = await async_unload_entry(hass, self._make_entry())
+
+        assert result is True
+        # Only the per-device service for the target account is removed.
+        hass.services.async_remove.assert_called_once_with(
+            SERVICE_NOTIFY, f"{DOMAIN}_echo1"
+        )
+        # The shared notify_service is left in place for the remaining account.
+        assert hass.data[DATA_ALEXAMEDIA]["notify_service"] is notify_service
+
+
+# =============================================================================
+# Tests for AlexaNotificationService.convert
+# =============================================================================
+
+
+class TestConvert:
+    """Test convert() name / serial / entity_id resolution and type mapping."""
+
+    def _alexa(self, name, serial, entity_id):
+        alexa = MagicMock()
+        alexa.name = name
+        alexa.unique_id = serial
+        alexa.device_serial_number = serial
+        alexa.entity_id = entity_id
+        return alexa
+
+    def _service(self, devices):
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {
+                            "media_player": {d.device_serial_number: d for d in devices}
+                        },
+                        "options": {},
+                    }
+                }
+            }
+        }
+        service = object.__new__(AlexaNotificationService)
+        service.hass = hass
+        service.last_called = True
+        return service
+
+    def test_convert_string_is_wrapped_in_list(self):
+        """A bare string (not a list) is treated as a single name."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert("Echo 1") == [alexa]
+
+    def test_convert_matches_by_name(self):
+        """A device is matched by its accountName."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["Echo 1"]) == [alexa]
+
+    def test_convert_matches_by_serial(self):
+        """A device is matched by its serial number / unique_id."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["serial1"]) == [alexa]
+
+    def test_convert_matches_by_entity_id(self):
+        """A device is matched by its Home Assistant entity_id."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["media_player.echo1"]) == [alexa]
+
+    def test_convert_matches_by_object(self):
+        """A device is matched when the alexa object itself is passed."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert([alexa]) == [alexa]
+
+    def test_convert_type_serialnumbers(self):
+        """type_='serialnumbers' returns the device serial."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["Echo 1"], type_="serialnumbers") == ["serial1"]
+
+    def test_convert_type_names(self):
+        """type_='names' returns the device accountName."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["serial1"], type_="names") == ["Echo 1"]
+
+    def test_convert_type_entity_ids(self):
+        """type_='entity_ids' returns the device entity_id."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["Echo 1"], type_="entity_ids") == ["media_player.echo1"]
+
+    def test_convert_passes_through_unmatched_when_not_filtering(self):
+        """An unmatched name is returned verbatim when filter_matches is False."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["unknown"]) == ["unknown"]
+
+    def test_convert_drops_unmatched_when_filtering(self):
+        """An unmatched name is dropped when filter_matches is True."""
+        alexa = self._alexa("Echo 1", "serial1", "media_player.echo1")
+        service = self._service([alexa])
+
+        assert service.convert(["unknown"], filter_matches=True) == []
+
+
+# =============================================================================
+# Tests for AlexaNotificationService.targets property
+# =============================================================================
+
+
+class TestTargetsProperty:
+    """Test the targets property, including last_called resolution."""
+
+    def _service(self, accounts, last_called=True):
+        hass = MagicMock()
+        hass.data = {DATA_ALEXAMEDIA: {"accounts": accounts}}
+        service = object.__new__(AlexaNotificationService)
+        service.hass = hass
+        service.last_called = last_called
+        return service
+
+    def _entity(self, entity_id, unique_id, last_called=None, ts=None):
+        entity = MagicMock()
+        entity.entity_id = entity_id
+        entity.unique_id = unique_id
+        attrs = {}
+        if last_called is not None:
+            attrs["last_called"] = last_called
+        if ts is not None:
+            attrs["last_called_timestamp"] = ts
+        entity.extra_state_attributes = attrs
+        return entity
+
+    def test_basic_device_mapping(self):
+        """Each entity maps its short name to its unique_id."""
+        entity = self._entity("media_player.echo1", "u1")
+        service = self._service(
+            {"test@example.com": {"entities": {"media_player": {"s1": entity}}}}
+        )
+
+        assert service.targets == {"echo1": "u1"}
+
+    def test_account_without_entities_is_skipped(self):
+        """An account without an 'entities' key is skipped."""
+        entity = self._entity("media_player.echo1", "u1")
+        service = self._service(
+            {
+                "no_entities@example.com": {},
+                "test@example.com": {"entities": {"media_player": {"s1": entity}}},
+            }
+        )
+
+        assert service.targets == {"echo1": "u1"}
+
+    def test_none_entities_are_skipped(self):
+        """None entities and entities with no entity_id are skipped."""
+        good = self._entity("media_player.echo1", "u1")
+        no_id = self._entity(None, "u2")
+        service = self._service(
+            {
+                "test@example.com": {
+                    "entities": {"media_player": {"s0": None, "s1": no_id, "s2": good}}
+                }
+            }
+        )
+
+        assert service.targets == {"echo1": "u1"}
+
+    def test_last_called_entity_with_numeric_name_suffix(self):
+        """A last_called name ending in a digit gets an email-suffixed key."""
+        entity = self._entity("media_player.echo1", "u1", last_called=True, ts="100")
+        service = self._service(
+            {"test@example.com": {"entities": {"media_player": {"s1": entity}}}}
+        )
+
+        result = service.targets
+
+        assert result["echo1"] == "u1"
+        assert result["last_called_test@example.com"] == "u1"
+
+    def test_last_called_entity_with_non_numeric_name(self):
+        """A last_called name not ending in a digit uses the bare key."""
+        entity = self._entity("media_player.kitchen", "u1", last_called=True, ts="50")
+        service = self._service(
+            {"test@example.com": {"entities": {"media_player": {"s1": entity}}}}
+        )
+
+        result = service.targets
+
+        assert result["last_called"] == "u1"
+
+    def test_last_called_picks_highest_timestamp_with_invalid_values(self):
+        """The most-recent last_called wins; invalid timestamps coerce to 0."""
+        first = self._entity("media_player.echo1", "u1", last_called=True, ts="abc")
+        second = self._entity("media_player.echo2", "u2", last_called=True, ts="100")
+        service = self._service(
+            {
+                "test@example.com": {
+                    "entities": {"media_player": {"s1": first, "s2": second}}
+                }
+            }
+        )
+
+        result = service.targets
+
+        # "abc" coerces to 0, so the second entity (ts=100) is selected.
+        assert result["last_called_test@example.com"] == "u2"
+
+    def test_last_called_keeps_first_when_new_timestamp_not_greater(self):
+        """A later entity with a lower timestamp does not replace the current one."""
+        first = self._entity("media_player.echo1", "u1", last_called=True, ts="100")
+        second = self._entity("media_player.echo2", "u2", last_called=True, ts="50")
+        service = self._service(
+            {
+                "test@example.com": {
+                    "entities": {"media_player": {"s1": first, "s2": second}}
+                }
+            }
+        )
+
+        result = service.targets
+
+        assert result["last_called_test@example.com"] == "u1"
+
+    def test_last_called_ignored_when_disabled(self):
+        """No last_called key is added when service.last_called is False."""
+        entity = self._entity("media_player.echo1", "u1", last_called=True, ts="100")
+        service = self._service(
+            {"test@example.com": {"entities": {"media_player": {"s1": entity}}}},
+            last_called=False,
+        )
+
+        result = service.targets
+
+        assert result == {"echo1": "u1"}
+        assert "last_called_test@example.com" not in result
+
+
+# =============================================================================
+# Tests for async_send_message: ATTR_TARGET string (JSON) handling
+# =============================================================================
+
+
+class TestAsyncSendMessageStringTarget:
+    """Test JSON-string handling of the ATTR_TARGET keyword."""
+
+    def _service(self):
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {"media_player": {}},
+                        "options": {},
+                    }
+                }
+            }
+        }
+        hass.states.get.return_value = None
+        service = object.__new__(AlexaNotificationService)
+        service.hass = hass
+        service.last_called = True
+        service.convert = MagicMock(return_value=[])
+        return service
+
+    @pytest.mark.asyncio
+    async def test_string_target_valid_json_is_parsed(self):
+        """A JSON-list string target is decoded and processed."""
+        service = self._service()
+
+        await service.async_send_message("hello", target='["media_player.echo1"]')
+
+        service.convert.assert_called_once()
+        expanded = service.convert.call_args[0][0]
+        assert "media_player.echo1" in expanded
+
+    @pytest.mark.asyncio
+    async def test_string_target_invalid_json_aborts(self):
+        """A non-JSON string target logs an error and aborts before convert()."""
+        service = self._service()
+
+        await service.async_send_message("hello", target="living_room")
+
+        service.convert.assert_not_called()
+
+
+# =============================================================================
+# Tests for async_send_message: per-notification-type dispatch
+# =============================================================================
+
+
+class TestAsyncSendMessageDispatch:
+    """Test the tts / announce / push / dropin / unknown dispatch branches."""
+
+    def _alexa(
+        self,
+        name="Echo 1",
+        serial="serial1",
+        entity_id="media_player.echo1",
+        available=True,
+    ):
+        alexa = MagicMock()
+        alexa.name = name
+        alexa.unique_id = serial
+        alexa.device_serial_number = serial
+        alexa.entity_id = entity_id
+        alexa.available = available
+        alexa.async_send_tts = AsyncMock()
+        alexa.async_send_announcement = AsyncMock()
+        alexa.async_send_mobilepush = AsyncMock()
+        alexa.async_send_dropin_notification = AsyncMock()
+        return alexa
+
+    def _service(self, alexas, options=None):
+        hass = MagicMock()
+        hass.data = {
+            DATA_ALEXAMEDIA: {
+                "accounts": {
+                    "test@example.com": {
+                        "entities": {
+                            "media_player": {a.device_serial_number: a for a in alexas}
+                        },
+                        "options": options or {},
+                    }
+                }
+            }
+        }
+        hass.states.get.return_value = None
+        service = object.__new__(AlexaNotificationService)
+        service.hass = hass
+        service.last_called = True
+        return service
+
+    @pytest.mark.asyncio
+    async def test_tts_sends_tts(self):
+        """The default type (tts) routes to async_send_tts."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message("hello", target=["media_player.echo1"])
+
+        alexa.async_send_tts.assert_awaited_once()
+        args, kwargs = alexa.async_send_tts.call_args
+        assert args[0] == "hello"
+        assert kwargs["queue_delay"] == DEFAULT_QUEUE_DELAY
+
+    @pytest.mark.asyncio
+    async def test_tts_uses_configured_queue_delay(self):
+        """The configured CONF_QUEUE_DELAY option overrides the default."""
+        alexa = self._alexa()
+        service = self._service([alexa], options={CONF_QUEUE_DELAY: 5})
+
+        await service.async_send_message("hello", target=["media_player.echo1"])
+
+        _, kwargs = alexa.async_send_tts.call_args
+        assert kwargs["queue_delay"] == 5
+
+    @pytest.mark.asyncio
+    async def test_tts_skips_unavailable_device(self):
+        """An unavailable device receives no tts."""
+        alexa = self._alexa(available=False)
+        service = self._service([alexa])
+
+        await service.async_send_message("hello", target=["media_player.echo1"])
+
+        alexa.async_send_tts.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tts_skips_unmatched_target(self):
+        """A target that matches no device produces no tts."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message("hello", target=["media_player.unknown"])
+
+        alexa.async_send_tts.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_announce_default_method(self):
+        """type=announce routes to async_send_announcement with method='all'."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message(
+            "hello",
+            target=["media_player.echo1"],
+            title="My Title",
+            data={"type": "announce"},
+        )
+
+        alexa.async_send_announcement.assert_awaited_once()
+        _, kwargs = alexa.async_send_announcement.call_args
+        assert kwargs["targets"] == ["serial1"]
+        assert kwargs["title"] == "My Title"
+        assert kwargs["method"] == "all"
+        assert kwargs["queue_delay"] == DEFAULT_QUEUE_DELAY
+
+    @pytest.mark.asyncio
+    async def test_announce_custom_method(self):
+        """A custom data['method'] is forwarded to async_send_announcement."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message(
+            "hello",
+            target=["media_player.echo1"],
+            data={"type": "announce", "method": "speak"},
+        )
+
+        _, kwargs = alexa.async_send_announcement.call_args
+        assert kwargs["method"] == "speak"
+
+    @pytest.mark.asyncio
+    async def test_push_sends_mobilepush(self):
+        """type=push routes to async_send_mobilepush."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message(
+            "hello",
+            target=["media_player.echo1"],
+            title="My Title",
+            data={"type": "push"},
+        )
+
+        alexa.async_send_mobilepush.assert_awaited_once()
+        _, kwargs = alexa.async_send_mobilepush.call_args
+        assert kwargs["title"] == "My Title"
+        assert kwargs["queue_delay"] == DEFAULT_QUEUE_DELAY
+
+    @pytest.mark.asyncio
+    async def test_dropin_sends_dropin_notification(self):
+        """type=dropin_notification routes to async_send_dropin_notification."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        await service.async_send_message(
+            "hello",
+            target=["media_player.echo1"],
+            data={"type": "dropin_notification"},
+        )
+
+        alexa.async_send_dropin_notification.assert_awaited_once()
+        _, kwargs = alexa.async_send_dropin_notification.call_args
+        assert kwargs["queue_delay"] == DEFAULT_QUEUE_DELAY
+
+    @pytest.mark.asyncio
+    async def test_unknown_type_raises_invalid(self):
+        """An unimplemented data['type'] raises voluptuous.Invalid."""
+        alexa = self._alexa()
+        service = self._service([alexa])
+
+        with pytest.raises(vol.Invalid):
+            await service.async_send_message(
+                "hello",
+                target=["media_player.echo1"],
+                data={"type": "bogus"},
+            )
