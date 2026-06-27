@@ -17,6 +17,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import (
@@ -27,7 +28,7 @@ from . import (
     hide_email,
 )
 from .alexa_entity import parse_detection_state_from_coordinator
-from .const import CONF_EXTENDED_ENTITY_DISCOVERY
+from .const import CONF_EXTENDED_ENTITY_DISCOVERY, DOMAIN
 from .helpers import add_devices, safe_get
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ class AlexaContact(CoordinatorEntity, BinarySensorEntity):
     """A contact sensor controlled by an Echo."""
 
     _attr_device_class = BinarySensorDeviceClass.DOOR
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: CoordinatorEntity, details: dict):
         """Initialize alexa contact sensor.
@@ -108,8 +110,21 @@ class AlexaContact(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def name(self):
-        """Return name."""
-        return self._name
+        """Return None so the entity inherits the device name (has_entity_name).
+
+        Name-neutral: the device is named after the contact sensor, so the
+        composed friendly name equals the previous ``self._name``.
+        """
+        return None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Group the entity under a device named after the contact sensor."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.alexa_entity_id)},
+            name=self._name,
+            manufacturer="Amazon",
+        )
 
     @property
     def unique_id(self):

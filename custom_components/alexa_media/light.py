@@ -22,6 +22,7 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.color import (
     color_hs_to_RGB,
@@ -43,7 +44,7 @@ from .alexa_entity import (
     parse_color_temp_from_coordinator,
     parse_power_from_coordinator,
 )
-from .const import CONF_EXTENDED_ENTITY_DISCOVERY
+from .const import CONF_EXTENDED_ENTITY_DISCOVERY, DOMAIN
 from .helpers import add_devices, safe_get
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,6 +133,8 @@ def color_modes(details) -> list:
 class AlexaLight(CoordinatorEntity, LightEntity):
     """A light controlled by an Echo."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, login, details):
         """Initialize alexa light entity."""
         super().__init__(coordinator)
@@ -155,8 +158,21 @@ class AlexaLight(CoordinatorEntity, LightEntity):
 
     @property
     def name(self):
-        """Return name."""
-        return self._name
+        """Return None so the entity inherits the device name (has_entity_name).
+
+        Name-neutral: the device is named after the light, so the composed
+        friendly name equals the previous ``self._name``.
+        """
+        return None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Group the entity under a device named after the light."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.alexa_entity_id)},
+            name=self._name,
+            manufacturer="Amazon",
+        )
 
     @property
     def unique_id(self):

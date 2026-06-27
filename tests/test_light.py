@@ -143,7 +143,11 @@ def test_hsb_to_alexa_color_none_and_value():
 
 def test_light_basic_properties():
     light, _ = _light()
-    assert light.name == "Lamp"
+    # has_entity_name: entity name is None; the device carries the name, so the
+    # composed friendly name is unchanged.
+    assert light.has_entity_name is True
+    assert light.name is None
+    assert light.device_info["name"] == "Lamp"
     assert light.unique_id == "light-1"
     assert light._attr_min_color_temp_kelvin == 2200
     assert light._attr_max_color_temp_kelvin == 6500

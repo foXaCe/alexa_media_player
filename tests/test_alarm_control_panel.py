@@ -362,10 +362,14 @@ class TestAlarmControlPanelProperties:
         assert panel.unique_id == "guard_entity_abc"
 
     def test_name_returns_friendly_name(self):
-        """Test name property returns friendly name with last 5 chars of appliance_id."""
+        """Test has_entity_name: name is None and the device carries the friendly name."""
         panel = self._create_panel()
-        # Friendly name should be "Alexa Guard " + last 5 chars of appliance_id
-        assert panel.name == "Alexa Guard 12345"
+        # has_entity_name: entity name is None; the device is named after the
+        # guard panel ("Alexa Guard " + last 5 chars of appliance_id), so the
+        # composed friendly name is unchanged.
+        assert panel.has_entity_name is True
+        assert panel.name is None
+        assert panel.device_info["name"] == "Alexa Guard 12345"
 
     def test_state_returns_armed_away(self):
         """Test state property returns armed away when coordinator says ARMED_AWAY."""

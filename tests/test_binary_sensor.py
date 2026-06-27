@@ -50,7 +50,11 @@ def _hass_with(account, account_dict):
 
 def test_contact_basic_properties():
     contact, _ = _make_contact()
-    assert contact.name == "Front Door"
+    # has_entity_name: entity name is None; the device carries the name, so the
+    # composed friendly name is unchanged.
+    assert contact.has_entity_name is True
+    assert contact.name is None
+    assert contact.device_info["name"] == "Front Door"
     assert contact.unique_id == "contact-1"
 
 
