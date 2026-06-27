@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Security
+
+- **OAuth secrets are no longer logged in cleartext at `DEBUG`.** `alexapy.obfuscate()` left `authorization_code`, `code_verifier` and `mac_dms` (containing `adp_token` and the RSA `device_private_key`) unmasked. A new `helpers.redact_sensitive()` layers `async_redact_data(..., TO_REDACT)` on top of `obfuscate()` and now guards every account/config log site (#25).
+
+### Changed
+
+- **`setup_alexa` (a ~2150-line god-function) was decomposed into a `setup/` package** — `context`, `coordinator_data`, `push`, `last_called`, `notifications`, `dnd`, `bluetooth` — each taking an explicit `SetupContext`. `__init__.py` shrank from 3344 to ~830 lines and is now config-entry lifecycle + orchestration only. Behaviour-preserving, no `unique_id` changes (#23, #24).
+- The coordinator update now raises `UpdateFailed` on transient `AlexapyConnectionError`/`AlexapyTooManyRequestsError`, so entity availability and `ConfigEntryNotReady` retries behave correctly (#23).
+- `from __future__ import annotations` added across all modules; the deprecated stdlib `datetime.utcnow()` replaced with timezone-aware `datetime.now(UTC)` (#27, #28).
+
+### Tests
+
+- Dedicated tests for the extracted `setup/` modules (bluetooth/context to 100%, coordinator_data guards + `UpdateFailed`/relogin paths, last_called pure helpers) and for `redact_sensitive`. Suite grew from 400 to 429+ (#26, #29).
+
 ## [5.16.2] - 2026-06-25
 
 ### Fixed
