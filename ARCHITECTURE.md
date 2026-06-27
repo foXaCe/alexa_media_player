@@ -51,6 +51,21 @@ Entities are exposed through the standard Home Assistant platform files —
 `async_setup_entry` and instantiates entities; device discovery and state live in
 the coordinator data.
 
+### Entity conventions
+
+- **`has_entity_name`** — entity platforms set `_attr_has_entity_name = True`,
+  return `name=None`, and expose `device_info` whose `name` is the human label
+  (the device/contact/light/guard name). The composed `friendly_name` is
+  therefore unchanged versus the old `name` property (name-neutral).
+- **`EntityDescription`** — entities with static descriptive metadata use a
+  (frozen) `*EntityDescription`. The control switches share
+  `AlexaSwitchEntityDescription` (translation_key + entity_category + on/off
+  icons); sensors carry their `device_class`/`state_class`/unit via `_attr_*`.
+- **`unique_id` stability is non-negotiable** — `unique_id` derives from the
+  Amazon serial (+ a fixed suffix), never from an `EntityDescription.key`.
+  Changing it silently renames established entities, so any entity refactor must
+  keep it byte-identical (guarded by tests).
+
 ## Extending the integration
 
 - **New `setup/` concern** — add a module under `setup/` whose functions take the
