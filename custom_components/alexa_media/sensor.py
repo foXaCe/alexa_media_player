@@ -923,8 +923,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
             if next_trigger_times:
                 alarm = next_trigger_times[0]
             elif weekdays:
-                for day in weekdays:
-                    recurrence.append(RECURRING_DAY[day])
+                recurrence.extend(RECURRING_DAY[day] for day in weekdays)
         else:
             recurring_pattern = next_item.get("recurringPattern")
             recurrence = RECURRING_PATTERN_ISO_SET.get(recurring_pattern)

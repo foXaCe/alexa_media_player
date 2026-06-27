@@ -54,7 +54,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
-    # noqa pylint: disable=too-many-branches
     """Fetch data from API endpoint.
 
     This is the place to pre-process the data to lookup tables
@@ -557,11 +556,11 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
                     "media_player"
                 ]
                 or identifier
-                in map(
-                    lambda x: slugify(f"{x}_{email}"),
-                    hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
+                in (
+                    slugify(f"{x}_{email}")
+                    for x in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
                         "media_player"
-                    ].keys(),
+                    ].keys()
                 )
                 or identifier in entity_backed_ids
             ):

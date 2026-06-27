@@ -16,7 +16,7 @@ from datetime import timedelta
 from functools import reduce
 import html as html_lib
 import logging
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 from aiohttp import ClientConnectionError, ClientSession, InvalidURL, web, web_response
@@ -759,7 +759,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 try:
                     _LOGGER.debug("Reloading integration for %s", hide_email(email))
                     await self.hass.config_entries.async_reload(existing_entry.entry_id)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     _LOGGER.warning(
                         "Failed to reload integration for %s; restart may be needed",
                         hide_email(email),
@@ -1126,11 +1126,11 @@ class AlexaMediaAuthorizationProxyView(HomeAssistantView):
     """Handle proxy connections."""
 
     url: str = AUTH_PROXY_PATH
-    extra_urls: list[str] = [f"{AUTH_PROXY_PATH}/{{tail:.*}}"]
+    extra_urls: ClassVar[list[str]] = [f"{AUTH_PROXY_PATH}/{{tail:.*}}"]
     name: str = AUTH_PROXY_NAME
     requires_auth: bool = False
     handler: web.RequestHandler = None
-    known_ips: dict[str, datetime.datetime] = {}
+    known_ips: ClassVar[dict[str, datetime.datetime]] = {}
     auth_seconds: int = 300
 
     def __init__(self, handler: web.RequestHandler):

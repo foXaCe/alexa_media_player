@@ -233,7 +233,7 @@ class AlexaLight(CoordinatorEntity, LightEntity):
             return self._requested_hs
         (
             adjusted_hs,
-            color_name,  # pylint:disable=unused-variable
+            _color_name,  # pylint:disable=unused-variable
         ) = hsb_to_alexa_color(hsb)
         return adjusted_hs
 

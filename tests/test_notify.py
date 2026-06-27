@@ -258,9 +258,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=["media_player.echo1"],
         ):
-            await service.async_send_message(
-                "hello", **{"target": ["media_player.echo1"]}
-            )
+            await service.async_send_message("hello", target=["media_player.echo1"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -279,7 +277,7 @@ class TestAsyncSendMessageGroupExpansion:
         ):
             await service.async_send_message(
                 "hello",
-                **{"target": ["media_player.echo1, media_player.echo2"]},
+                target=["media_player.echo1, media_player.echo2"],
             )
 
         service.convert.assert_called_once()
@@ -304,7 +302,7 @@ class TestAsyncSendMessageGroupExpansion:
         ):
             await service.async_send_message(
                 "hello",
-                **{"target": [json_target]},
+                target=[json_target],
             )
 
         service.convert.assert_called_once()
@@ -331,7 +329,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message("hello", **{"target": [dict_target]})
+            await service.async_send_message("hello", target=[dict_target])
 
         service.convert.assert_called_once()
         expanded = service.convert.call_args[0][0]
@@ -347,7 +345,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message("hello", **{"target": [42]})
+            await service.async_send_message("hello", target=[42])
 
         service.convert.assert_called_once()
         expanded = service.convert.call_args[0][0]
@@ -371,7 +369,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message("hello", **{"target": ['"echo1"']})
+            await service.async_send_message("hello", target=['"echo1"'])
 
         service.convert.assert_called_once()
         expanded = service.convert.call_args[0][0]
@@ -399,7 +397,7 @@ class TestAsyncSendMessageGroupExpansion:
             return_value=[],
         ):
             await service.async_send_message(
-                "hello", **{"target": ["media_player.echo_group"]}
+                "hello", target=["media_player.echo_group"]
             )
 
         service.convert.assert_called_once()
@@ -426,7 +424,7 @@ class TestAsyncSendMessageGroupExpansion:
             return_value=[],
         ):
             await service.async_send_message(
-                "hello", **{"target": ["media_player.echo_group"]}
+                "hello", target=["media_player.echo_group"]
             )
 
         service.convert.assert_called_once()
@@ -456,7 +454,7 @@ class TestAsyncSendMessageGroupExpansion:
             return_value=[],
         ):
             await service.async_send_message(
-                "hello", **{"target": ["media_player.echo_group"]}
+                "hello", target=["media_player.echo_group"]
             )
 
         service.convert.assert_called_once()
@@ -478,9 +476,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message(
-                "hello", **{"target": ["media_player.echo1"]}
-            )
+            await service.async_send_message("hello", target=["media_player.echo1"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -506,9 +502,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=["media_player.echo1", "media_player.echo2"],
         ) as mock_expand:
-            await service.async_send_message(
-                "hello", **{"target": ["group.echo_players"]}
-            )
+            await service.async_send_message("hello", target=["group.echo_players"])
 
         mock_expand.assert_called_once_with(hass, ["group.echo_players"])
         service.convert.assert_called_once()
@@ -528,7 +522,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             side_effect=ValueError("invalid group"),
         ):
-            await service.async_send_message("hello", **{"target": ["group.bad_group"]})
+            await service.async_send_message("hello", target=["group.bad_group"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -547,9 +541,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=["media_player.echo1"],
         ):
-            await service.async_send_message(
-                "hello", **{"target": ["group.echo_players"]}
-            )
+            await service.async_send_message("hello", target=["group.echo_players"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -570,9 +562,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message(
-                "hello", **{"target": ["Living Room Echo"]}
-            )
+            await service.async_send_message("hello", target=["Living Room Echo"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -589,9 +579,7 @@ class TestAsyncSendMessageGroupExpansion:
             "custom_components.alexa_media.notify.expand_entity_ids",
             return_value=[],
         ):
-            await service.async_send_message(
-                "hello", **{"target": ["sensor.temperature"]}
-            )
+            await service.async_send_message("hello", target=["sensor.temperature"])
 
         service.convert.assert_called_once()
         assert service.convert.call_args.kwargs["type_"] == "entities"
@@ -621,13 +609,11 @@ class TestAsyncSendMessageGroupExpansion:
         ):
             await service.async_send_message(
                 "hello",
-                **{
-                    "target": [
-                        "media_player.echo_group",
-                        "group.echo_players",
-                        "Living Room Echo",
-                    ]
-                },
+                target=[
+                    "media_player.echo_group",
+                    "group.echo_players",
+                    "Living Room Echo",
+                ],
             )
 
         service.convert.assert_called_once()

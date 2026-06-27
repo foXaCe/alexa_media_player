@@ -359,6 +359,7 @@ async def _catch_login_errors(func, instance, args, kwargs) -> Any:
     except AlexapyLoginError as ex:
         login = None
         email = None
+        hass = None
         all_args = list(args) + list(kwargs.values())
         # _LOGGER.debug("Func %s instance %s %s %s", func, instance, args, kwargs)
         if instance:
@@ -395,10 +396,6 @@ async def _catch_login_errors(func, instance, args, kwargs) -> Any:
                 hide_email(email),
                 EXCEPTION_TEMPLATE.format(type(ex).__name__, ex.args),
             )
-        try:
-            hass
-        except NameError:
-            hass = None
         report_relogin_required(hass, login, email)
         return None
     return result
@@ -446,7 +443,7 @@ def _existing_serials(hass, login_obj) -> list:
         )
         for serial in existing_serials[:]:
             device = device_data.get(serial, {})
-            if "appDeviceList" in device and device["appDeviceList"]:
+            if device.get("appDeviceList"):
                 apps = [
                     x["serialNumber"]
                     for x in device["appDeviceList"]

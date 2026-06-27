@@ -4,14 +4,21 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "W",   # pycodestyle warnings
-    "I",   # isort
-    "UP",  # pyupgrade
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear (likely bugs)
+    "C4",   # flake8-comprehensions
+    "LOG",  # flake8-logging
+    "PERF", # perflint (performance anti-patterns)
+    "PIE",  # flake8-pie (misc lints)
+    "RUF",  # ruff-specific (mutable defaults, etc.)
 ]
-# E501 (line length) is handled by the formatter. Conservative ruleset to keep
-# the historical (previously flake8-clean) code base green; tighten incrementally.
+# E501 (line length) is handled by the formatter. The ruleset is tightened
+# incrementally; SIM/RET/TID are intentionally left out (TID bans the relative
+# imports that custom components rely on; SIM/RET are stylistic and noisy here).
 # UP047 (PEP 695 generics) is an invasive signature rewrite — intentionally relaxed.
 ignore = ["E501", "UP047"]
 

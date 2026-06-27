@@ -82,7 +82,7 @@ async def test_update_bluetooth_state_returns_none_without_match():
 
 async def test_update_dnd_state_dispatches_on_success():
     email = "user@example.com"
-    ctx, hass = _ctx(email)
+    ctx, _hass = _ctx(email)
     dnd = {
         "doNotDisturbDeviceStatusList": [
             {"deviceSerialNumber": "SER1", "enabled": True}

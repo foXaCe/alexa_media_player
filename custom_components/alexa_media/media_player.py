@@ -507,9 +507,8 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
             self._available = True
             self.schedule_update_ha_state()
         if "last_called_change" in event:
-            if (
-                event_serial == self.device_serial_number
-                or any(
+            if event_serial == self.device_serial_number or (
+                any(
                     item["serialNumber"] == event_serial
                     for item in self._app_device_list
                 )
@@ -1018,11 +1017,11 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                     and self._session.get("isPlayingInLemur")
                 ):
                     asyncio.gather(
-                        *map(
-                            lambda x: self.hass.data[DATA_ALEXAMEDIA]["accounts"][
+                        *(
+                            self.hass.data[DATA_ALEXAMEDIA]["accounts"][
                                 self._login.email
-                            ]["entities"]["media_player"][x].async_update(),
-                            filter(
+                            ]["entities"]["media_player"][x].async_update()
+                            for x in filter(
                                 lambda x: (
                                     self.hass.data[DATA_ALEXAMEDIA]["accounts"][
                                         self._login.email
@@ -1032,7 +1031,7 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                                     ]["entities"]["media_player"][x].available
                                 ),
                                 self._cluster_members,
-                            ),
+                            )
                         )
                     )
         if self.hass:
@@ -1083,12 +1082,12 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         return source
 
     def _get_source_list(self):
-        sources = []
-        if self._bluetooth_state.get("pairedDeviceList"):
-            for devices in self._bluetooth_state["pairedDeviceList"]:
-                if devices["profiles"] and "A2DP-SOURCE" in devices["profiles"]:
-                    sources.append(devices["friendlyName"])
-        return ["Local Speaker"] + sources
+        sources = [
+            device["friendlyName"]
+            for device in self._bluetooth_state.get("pairedDeviceList") or []
+            if device["profiles"] and "A2DP-SOURCE" in device["profiles"]
+        ]
+        return ["Local Speaker", *sources]
 
     def _get_connected_bluetooth(self):
         source = None
@@ -1099,11 +1098,10 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         return source
 
     def _get_bluetooth_list(self):
-        sources = []
-        if self._bluetooth_state.get("pairedDeviceList"):
-            for devices in self._bluetooth_state["pairedDeviceList"]:
-                sources.append(devices["friendlyName"])
-        return sources
+        return [
+            device["friendlyName"]
+            for device in self._bluetooth_state.get("pairedDeviceList") or []
+        ]
 
     def _get_last_called(self):
         try:
@@ -2119,7 +2117,7 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                     "notify.last_called toggled for %s; re-registered notify services",
                     last_called_key,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception(
                     "Failed to reset notify.last_called for %s", last_called_key
                 )
