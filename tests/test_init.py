@@ -500,7 +500,8 @@ async def test_setup_alexa_creates_new_coordinator():
     coord_instance = MagicMock()
     coord_instance.async_config_entry_first_refresh = AsyncMock()
     coord_cls = MagicMock(return_value=coord_instance)
-    patches = _setup_alexa_patches(http2_enabled=True) + [
+    patches = [
+        *_setup_alexa_patches(http2_enabled=True),
         patch(f"{_PKG}.AlexaMediaCoordinator", coord_cls),
     ]
     with _applied(patches):
@@ -519,7 +520,7 @@ async def test_setup_alexa_creates_new_coordinator():
 async def test_setup_alexa_reuses_optimized_coordinator():
     coordinator = MagicMock(spec=AlexaMediaCoordinator)
     coordinator.async_config_entry_first_refresh = AsyncMock()
-    hass, entry, account = _setup_alexa_env(coordinator=coordinator)
+    hass, entry, _account = _setup_alexa_env(coordinator=coordinator)
     login = _make_login()
     with _applied(_setup_alexa_patches(http2_enabled=True)):
         result = await amp.setup_alexa(hass, entry, login)
@@ -532,7 +533,7 @@ async def test_setup_alexa_reuses_optimized_coordinator():
 async def test_setup_alexa_reuses_legacy_coordinator_sets_interval():
     coordinator = MagicMock()  # not an AlexaMediaCoordinator instance
     coordinator.async_config_entry_first_refresh = AsyncMock()
-    hass, entry, account = _setup_alexa_env(coordinator=coordinator)
+    hass, entry, _account = _setup_alexa_env(coordinator=coordinator)
     login = _make_login()
     with _applied(_setup_alexa_patches(http2_enabled=False)):
         result = await amp.setup_alexa(hass, entry, login)

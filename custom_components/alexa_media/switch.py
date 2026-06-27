@@ -103,7 +103,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
     _LOGGER.debug("%s: Loading switches", hide_email(account))
     if "switch" not in account_dict["entities"]:
         hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["switch"] = {}
-    for key, _ in account_dict["devices"]["media_player"].items():
+    for key in account_dict["devices"]["media_player"].keys():
         if key not in account_dict["entities"]["media_player"]:
             _LOGGER.debug(
                 "%s: Media player %s not loaded yet; delaying load",

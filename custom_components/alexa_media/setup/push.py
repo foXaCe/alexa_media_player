@@ -447,14 +447,12 @@ async def http2_handler(ctx: SetupContext, message_obj):
             ):
                 # To-do
                 _LOGGER.debug("%s currently not supported", command)
-                pass
 
             elif command in [
                 "PUSH_CONTENT_FOCUS_CHANGE",  # Likely prime related refocus
                 "PUSH_DEVICE_SETUP_STATE_CHANGE",  # Likely device changes mid setup
             ]:
                 _LOGGER.debug("%s currently not supported", command)
-                pass
 
             elif (
                 command
@@ -463,13 +461,11 @@ async def http2_handler(ctx: SetupContext, message_obj):
                 ]
             ):
                 _LOGGER.debug("%s currently not supported", command)
-                pass
 
             elif command in [
                 "MATTER_SETUP_NOTIFICATION",  # New command observed 2026-02-20
             ]:
                 _LOGGER.debug("%s: New command; currently not supported", command)
-                pass
 
             else:
                 _LOGGER.debug(

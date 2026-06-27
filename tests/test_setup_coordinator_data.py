@@ -354,7 +354,7 @@ async def test_entities_to_monitor_collected_and_returned():
     ctx, hass = _ctx({EMAIL: account})
     api = _api_full(devices=[])
     get_ed = AsyncMock(return_value={"temp1": {"state": 1}})
-    with _applied(_full_patches(api) + [patch(f"{_MOD}.get_entity_data", get_ed)]):
+    with _applied([*_full_patches(api), patch(f"{_MOD}.get_entity_data", get_ed)]):
         result = await async_update_data(ctx)
 
     assert result == {"temp1": {"state": 1}}

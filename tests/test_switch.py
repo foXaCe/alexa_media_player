@@ -25,7 +25,7 @@ from custom_components.alexa_media.switch import (
     async_setup_platform,
 )
 
-_EMAIL = "test@example.com"  # noqa: S105
+_EMAIL = "test@example.com"
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ class TestHueEmulatedEnabledVariable:
         CONF_EXTENDED_ENTITY_DISCOVERY would raise a NameError because
         hue_emulated_enabled was used but never defined.
         """
-        email = "test@example.com"  # noqa: S105
+        email = "test@example.com"
         mock_hass.data = {DATA_ALEXAMEDIA: {"accounts": {email: mock_account_dict}}}
 
         with patch(
@@ -114,7 +114,7 @@ class TestSmartSwitchCreation:
         Even when emulated_hue is enabled, switches that are not marked as
         is_hue_v1=True should be created normally.
         """
-        email = "test@example.com"  # noqa: S105
+        email = "test@example.com"
         # Only keep the non-hue-v1 switch
         mock_account_dict["devices"]["smart_switch"] = [
             {"id": "switch1", "name": "Smart Plug 1", "is_hue_v1": False}
@@ -149,7 +149,7 @@ class TestSmartSwitchCreation:
         is_hue_v1=True, it should be skipped to avoid duplicates with
         the emulated_hue integration.
         """
-        email = "test@example.com"  # noqa: S105
+        email = "test@example.com"
         # Only keep the hue-v1 switch
         mock_account_dict["devices"]["smart_switch"] = [
             {"id": "switch2", "name": "Hue Plug", "is_hue_v1": True}
@@ -183,7 +183,7 @@ class TestSmartSwitchCreation:
         When emulated_hue is NOT in the components list, even switches with
         is_hue_v1=True should be created since there's no conflict.
         """
-        email = "test@example.com"  # noqa: S105
+        email = "test@example.com"
         # Only keep the hue-v1 switch
         mock_account_dict["devices"]["smart_switch"] = [
             {"id": "switch2", "name": "Hue Plug", "is_hue_v1": True}
@@ -215,7 +215,7 @@ class TestSmartSwitchCreation:
         Smart switch creation should be skipped entirely when the extended
         entity discovery option is disabled.
         """
-        email = "test@example.com"  # noqa: S105
+        email = "test@example.com"
         mock_account_dict["options"][CONF_EXTENDED_ENTITY_DISCOVERY] = False
         mock_hass.data = {DATA_ALEXAMEDIA: {"accounts": {email: mock_account_dict}}}
 

@@ -245,7 +245,7 @@ async def async_setup_entry(hass, config_entry):
         """Clean up Alexa connections."""
         _LOGGER.debug("Received shutdown request: %s", event)
         if accounts := safe_get(hass.data, [DATA_ALEXAMEDIA, "accounts"], {}):
-            for email, _ in accounts.items():
+            for email in accounts.keys():
                 await close_connections(hass, email)
 
     async def complete_startup(event=None) -> None:
@@ -416,7 +416,7 @@ async def async_setup_entry(hass, config_entry):
                 await hass.async_add_executor_job(
                     login._session.cookie_jar.load, cookiefile
                 )
-            except Exception as ex:  # noqa: BLE001
+            except Exception as ex:
                 # Best-effort preload only. alexapy >= 1.29.24 persists cookies in
                 # its own versioned JSON format, which aiohttp's CookieJar.load
                 # cannot parse; alexapy's load_cookie() handles it, so any failure

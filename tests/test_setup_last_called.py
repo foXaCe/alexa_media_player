@@ -433,7 +433,8 @@ def test_is_dnd_voice_toggle_summary_contains_phrase():
 def test_is_dnd_voice_toggle_response_wont_disturb_smartquote():
     # The smart apostrophe (U+2019) must be normalized to ASCII before matching.
     assert (
-        _is_dnd_voice_toggle({"summary": "", "response": "I won’t disturb you"}) is True
+        _is_dnd_voice_toggle({"summary": "", "response": "I won’t disturb you"})  # noqa: RUF001 - smart quote is the point of the test
+        is True
     )
 
 

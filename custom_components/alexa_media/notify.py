@@ -44,7 +44,7 @@ async def async_get_service(hass, config, discovery_info=None):
     """Get the demo notification service."""
     result = False
     for account, account_dict in hass.data[DATA_ALEXAMEDIA]["accounts"].items():
-        for key, _ in account_dict["devices"]["media_player"].items():
+        for key in account_dict["devices"]["media_player"].keys():
             if key not in account_dict["entities"]["media_player"]:
                 _LOGGER.debug(
                     "%s: Media player %s not loaded yet; delaying load",
@@ -155,7 +155,7 @@ class AlexaNotificationService(BaseNotificationService):
             if "entities" not in account_dict:
                 continue
             last_called_entity = None
-            for _, entity in account_dict["entities"]["media_player"].items():
+            for entity in account_dict["entities"]["media_player"].values():
                 if entity is None or entity.entity_id is None:
                     continue
                 entity_name = (entity.entity_id).split(".")[1]
@@ -195,7 +195,7 @@ class AlexaNotificationService(BaseNotificationService):
             or not self.hass.data[DATA_ALEXAMEDIA]["accounts"].items()
         ):
             return devices
-        for _, account_dict in self.hass.data[DATA_ALEXAMEDIA]["accounts"].items():
+        for account_dict in self.hass.data[DATA_ALEXAMEDIA]["accounts"].values():
             devices = devices + list(account_dict["entities"]["media_player"].values())
         return devices
 
