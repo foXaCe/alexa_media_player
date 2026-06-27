@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.17.1] - 2026-06-27
+
+### Fixed
+
+- **The `last_called` probe no longer logs a known transient alexapy error as a WARNING with a traceback.** `AlexaAPI.get_customer_history_records` can raise `TypeError: Cannot serialize non-str key None` from deep inside alexapy/aiohttp (a `None` HTTP header key, surfaced on Python 3.14 / newer aiohttp). The integration already backs off and re-arms the probe (self-healing), so this is now logged at `DEBUG` instead of alarming users. Root cause is in alexapy (#46).
+
 ## [5.17.0] - 2026-06-27
 
 ### Added
