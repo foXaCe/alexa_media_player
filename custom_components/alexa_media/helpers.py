@@ -373,8 +373,8 @@ async def _catch_login_errors(func, instance, args, kwargs) -> Any:
                     login = arg
                     break
                 if hasattr(arg, "_login"):
-                    login = instance._login
-                    hass = instance.hass
+                    login = arg._login  # pylint: disable=protected-access
+                    hass = arg.hass
                     break
 
         if login:
