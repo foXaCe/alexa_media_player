@@ -2,10 +2,13 @@
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-06-27
+
 ### Added
 
 - **`has_entity_name` adopted on every entity platform** — `media_player`, `light`, `binary_sensor` and `alarm_control_panel` now return `name=None` and expose a `DeviceInfo` named after the former friendly name (Quality Scale Bronze/Gold). Name-neutral: the composed `friendly_name` is unchanged and `unique_id`/`entity_id` are untouched. Verified live, friendly names equal the device names (#32, #33).
 - **Control switches use an `EntityDescription`** — DND/Shuffle/Repeat share a frozen `AlexaSwitchEntityDescription` (extends `SwitchEntityDescription` with on/off icon variants) carrying `translation_key`, `entity_category` and icons declaratively, replacing the per-subclass property overrides. `unique_id` is unchanged (#39).
+- **Modern Home Assistant selectors in the options flow** — `scan_interval`/`queue_delay` render as numeric boxes (with a `seconds` unit and bounds), `extended_entity_discovery`/`debug` as toggles, and `public_url`/`include`/`exclude` as text. Stored value types are preserved (#42).
 
 ### Security
 
@@ -16,6 +19,8 @@
 - **`setup_alexa` (a ~2150-line god-function) was decomposed into a `setup/` package** — `context`, `coordinator_data`, `push`, `last_called`, `notifications`, `dnd`, `bluetooth` — each taking an explicit `SetupContext`. `__init__.py` shrank from 3344 to ~830 lines and is now config-entry lifecycle + orchestration only. Behaviour-preserving, no `unique_id` changes (#23, #24).
 - The coordinator update now raises `UpdateFailed` on transient `AlexapyConnectionError`/`AlexapyTooManyRequestsError`, so entity availability and `ConfigEntryNotReady` retries behave correctly (#23).
 - `from __future__ import annotations` added across all modules; the deprecated stdlib `datetime.utcnow()` replaced with timezone-aware `datetime.now(UTC)` (#27, #28).
+- The ruff ruleset was tightened (added `B`/`C4`/`LOG`/`PERF`/`PIE`/`RUF`) and all violations fixed, including annotating the proxy view's mutable class attributes with `typing.ClassVar` (#43).
+- Renovate now tracks the `alexapy` pin in the integration `manifest.json` (custom regex manager) and groups it with the test-requirements pin for a single, manually-reviewed PR (#44).
 
 ### Fixed
 
@@ -24,7 +29,7 @@
 
 ### Tests
 
-- **Integration coverage raised from ~52% to 94%** (suite ~430 → 987 tests): setup modules `push`/`coordinator_data`/`dnd` → 100% and `last_called` → 65%; `alexa_entity`/`notify`/`metrics` → 100%; `helpers`/`sensor`/`switch`/`diagnostics` → 99–100%; `__init__` → 99%; `config_flow`/`services`/`coordinator`/`runtime_data` → 100%; `media_player` 38% → 82% (#31, #34, #35, #36, #37). Earlier `setup/` module tests and `redact_sensitive` (#26, #29).
+- **Integration coverage raised from ~52% to 94%** (suite ~430 → 988 tests): setup modules `push`/`coordinator_data`/`dnd` → 100% and `last_called` → 65%; `alexa_entity`/`notify`/`metrics` → 100%; `helpers`/`sensor`/`switch`/`diagnostics` → 99–100%; `__init__` → 99%; `config_flow`/`services`/`coordinator`/`runtime_data` → 100%; `media_player` 38% → 82% (#31, #34, #35, #36, #37). Earlier `setup/` module tests and `redact_sensitive` (#26, #29).
 
 ## [5.16.2] - 2026-06-25
 
