@@ -16,6 +16,7 @@ from alexapy import hide_email, hide_serial
 from homeassistant.components.alarm_control_panel import AlarmControlPanelEntity
 from homeassistant.const import CONF_EMAIL, STATE_UNAVAILABLE
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .alexa_entity import parse_guard_state_from_coordinator
@@ -138,6 +139,8 @@ async def async_unload_entry(hass, entry) -> bool:
 class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEntity):
     """Implementation of Alexa Media Player alarm control panel."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, login, coordinator, guard_entity, media_players=None) -> None:
         """Initialize the Alexa device."""
         AlexaMedia.__init__(self, None, login)
@@ -221,9 +224,22 @@ class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEnt
         return self._guard_entity_id
 
     @property
+    def device_info(self) -> DeviceInfo:
+        """Group the entity under a device named after the Alexa Guard panel."""
+        return DeviceInfo(
+            identifiers={(ALEXA_DOMAIN, self._guard_entity_id)},
+            name=self._friendly_name,
+            manufacturer="Amazon",
+        )
+
+    @property
     def name(self):
-        """Return the name of the device."""
-        return self._friendly_name
+        """Return None so the entity inherits the device name (has_entity_name).
+
+        Name-neutral: the device is named after the Alexa Guard panel, so the
+        composed friendly name equals the previous ``self._friendly_name``.
+        """
+        return None
 
     @property
     def state(self):
