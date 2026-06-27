@@ -622,12 +622,17 @@ def _init_last_called_probe_worker(ctx: SetupContext, account: dict) -> None:
                                 max_record_size=max_record_size,
                             )
                         except TypeError as exc:
-                            # Known alexapy/aiohttp edge case: None header key, etc.
+                            # Known transient alexapy/aiohttp edge case (e.g. a None
+                            # header key surfaced on Python 3.14 / newer aiohttp).
+                            # It is self-healing: we back off and re-arm the probe
+                            # just below, so log at DEBUG rather than alarming users
+                            # with a traceback for something the integration already
+                            # recovers from. Root cause lives in alexapy.
                             account_live["last_called_probe_next_allowed"] = (
                                 time.monotonic() + LAST_CALLED_CONN_BACKOFF_S
                             )
-                            _LOGGER.warning(
-                                "%s: last_called probe API TypeError (%s): %s",
+                            _LOGGER.debug(
+                                "%s: last_called probe API TypeError (%s); backing off and retrying: %s",
                                 hide_email(email),
                                 trigger_cmd,
                                 exc,
