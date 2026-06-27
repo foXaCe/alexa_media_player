@@ -507,6 +507,29 @@ async def test_options_flow_submit_updates_entry():
     assert user_input[CONF_INCLUDE_DEVICES] == "Echo"
 
 
+async def test_options_flow_uses_modern_selectors():
+    """The options schema renders modern HA selectors instead of bare types."""
+    from homeassistant.helpers.selector import (
+        BooleanSelector,
+        NumberSelector,
+        TextSelector,
+    )
+
+    flow, _entry = _make_options_flow({CONF_URL: "amazon.com"})
+    flow.async_show_form = MagicMock(return_value={"type": "form"})
+    await flow.async_step_init(None)
+    by_key = {
+        marker.schema: validator for marker, validator in flow.options_schema.items()
+    }
+    assert isinstance(by_key[CONF_SCAN_INTERVAL], NumberSelector)
+    assert isinstance(by_key[CONF_QUEUE_DELAY], NumberSelector)
+    assert isinstance(by_key[CONF_EXTENDED_ENTITY_DISCOVERY], BooleanSelector)
+    assert isinstance(by_key[CONF_DEBUG], BooleanSelector)
+    assert isinstance(by_key[CONF_PUBLIC_URL], TextSelector)
+    assert isinstance(by_key[CONF_INCLUDE_DEVICES], TextSelector)
+    assert isinstance(by_key[CONF_EXCLUDE_DEVICES], TextSelector)
+
+
 # --------------------------------------------------------------------------- #
 # Auth views
 # --------------------------------------------------------------------------- #

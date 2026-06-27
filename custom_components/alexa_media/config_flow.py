@@ -46,6 +46,15 @@ from homeassistant.data_entry_flow import FlowResult, UnknownFlow
 from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 from homeassistant.helpers.network import NoURLAvailableError, get_url
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from homeassistant.util import slugify
 import httpx
 import voluptuous as vol
@@ -969,6 +978,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options"""
 
+        # Modern HA selectors render proper widgets (URL/text boxes, numeric
+        # boxes with units, toggles) instead of bare text fields. Value types are
+        # preserved: text -> str, toggles -> bool, numbers -> seconds consumed as
+        # timedelta seconds (int/float equivalent downstream).
         self.options_schema = OrderedDict(
             [
                 (
@@ -978,28 +991,35 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_PUBLIC_URL, DEFAULT_PUBLIC_URL
                         ),
                     ),
-                    str,
+                    TextSelector(TextSelectorConfig(type=TextSelectorType.URL)),
                 ),
                 (
                     vol.Optional(
                         CONF_INCLUDE_DEVICES,
                         default=self.config_entry.data.get(CONF_INCLUDE_DEVICES, ""),
                     ),
-                    str,
+                    TextSelector(),
                 ),
                 (
                     vol.Optional(
                         CONF_EXCLUDE_DEVICES,
                         default=self.config_entry.data.get(CONF_EXCLUDE_DEVICES, ""),
                     ),
-                    str,
+                    TextSelector(),
                 ),
                 (
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
                         default=self.config_entry.data.get(CONF_SCAN_INTERVAL, 120),
                     ),
-                    int,
+                    NumberSelector(
+                        NumberSelectorConfig(
+                            min=1,
+                            step=1,
+                            mode=NumberSelectorMode.BOX,
+                            unit_of_measurement="seconds",
+                        )
+                    ),
                 ),
                 (
                     vol.Optional(
@@ -1008,7 +1028,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_QUEUE_DELAY, DEFAULT_QUEUE_DELAY
                         ),
                     ),
-                    float,
+                    NumberSelector(
+                        NumberSelectorConfig(
+                            min=0,
+                            step=0.1,
+                            mode=NumberSelectorMode.BOX,
+                            unit_of_measurement="seconds",
+                        )
+                    ),
                 ),
                 (
                     vol.Optional(
@@ -1018,14 +1045,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             DEFAULT_EXTENDED_ENTITY_DISCOVERY,
                         ),
                     ),
-                    bool,
+                    BooleanSelector(),
                 ),
                 (
                     vol.Optional(
                         CONF_DEBUG,
                         default=self.config_entry.data.get(CONF_DEBUG, DEFAULT_DEBUG),
                     ),
-                    bool,
+                    BooleanSelector(),
                 ),
             ]
         )
