@@ -1051,6 +1051,37 @@ class TestCatchLoginErrors:
         mock_report.assert_called_once_with(None, login, "user@example.com")
 
     @pytest.mark.asyncio
+    async def test_login_discovered_via_arg_login_attr(self):
+        """An arg exposing ._login/.hass supplies the relogin context (no instance).
+
+        Regression guard: this branch previously read ``instance._login`` while
+        ``instance`` was None, raising AttributeError instead of recovering the
+        login from the argument.
+        """
+        inner_login = MagicMock(spec=AlexaLogin)
+        inner_login.email = "owner@example.com"
+        inner_login.test_loggedin = AsyncMock(return_value=False)
+        # An entity-like arg: not an AlexaLogin, but carries _login + hass.
+        arg = MagicMock(spec=["_login", "hass"])
+        arg._login = inner_login
+        arg.hass = MagicMock()
+
+        @_catch_login_errors
+        async def func(first, obj):
+            raise AlexapyLoginError("bad login")
+
+        with patch(
+            "custom_components.alexa_media.helpers.report_relogin_required"
+        ) as mock_report:
+            # first is falsy -> instance stays falsy -> arg loop runs; obj has _login.
+            result = await func(None, arg)
+
+        assert result is None
+        inner_login.test_loggedin.assert_awaited_once()
+        # login AND hass are resolved from the arg, not from the None instance.
+        mock_report.assert_called_once_with(arg.hass, inner_login, "owner@example.com")
+
+    @pytest.mark.asyncio
     async def test_login_error_without_login_reports_none(self):
         """A login error with no resolvable login reports with all-None args."""
         instance = MagicMock(spec=["check_login_changes"])
