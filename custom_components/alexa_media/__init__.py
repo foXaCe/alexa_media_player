@@ -427,7 +427,6 @@ async def async_setup_entry(hass, config_entry):
         _t = time.monotonic()
         if await test_login_status(hass, config_entry, login):
             _LOGGER.debug("[BOOT] test_login_status in %.2fs", time.monotonic() - _t)
-            _t = time.monotonic()
             await setup_alexa(hass, config_entry, login)
             _LOGGER.debug(
                 "[BOOT] setup_entry total: %.2fs", time.monotonic() - _boot_start
