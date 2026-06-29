@@ -367,7 +367,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
         ):
             otp: str = self.login.get_totp_token()
             if otp:
-                _LOGGER.debug("Generated TOTP: %s", otp)
+                _LOGGER.debug("Generated TOTP token")
                 return self.async_show_form(
                     step_id="totp_register",
                     data_schema=vol.Schema(self.totp_register),
@@ -538,7 +538,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
             ):
                 otp: str = self.login.get_totp_token()
                 if otp:
-                    _LOGGER.debug("Generated TOTP: %s", otp)
+                    _LOGGER.debug("Generated TOTP token")
                     return self.async_show_form(
                         step_id="totp_register",
                         data_schema=vol.Schema(self.totp_register),
@@ -611,7 +611,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
             _LOGGER.debug("Not registered, regenerating")
             otp: str = self.login.get_totp_token()
             if otp:
-                _LOGGER.debug("Generated TOTP: %s", otp)
+                _LOGGER.debug("Generated TOTP token")
                 return self.async_show_form(
                     step_id="totp_register",
                     data_schema=vol.Schema(self.totp_register),
@@ -773,23 +773,19 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 title=f"{login.email} - {login.url}", data=self.config
             )
         if login.status and login.status.get("securitycode_required"):
+            # Never log the actual 2FA/TOTP code (sensitive); log only its presence.
             _LOGGER.debug(
-                "Creating config_flow to request 2FA. Saved security code %s",
-                self.securitycode,
+                "Creating config_flow to request 2FA. Saved security code present: %s",
+                bool(self.securitycode),
             )
             generated_securitycode: str = login.get_totp_token()
             if (
                 self.securitycode or generated_securitycode
             ) and self.automatic_steps < 2:
                 if self.securitycode:
-                    _LOGGER.debug(
-                        "Automatically submitting securitycode %s", self.securitycode
-                    )
+                    _LOGGER.debug("Automatically submitting saved securitycode")
                 else:
-                    _LOGGER.debug(
-                        "Automatically submitting generated securitycode %s",
-                        generated_securitycode,
-                    )
+                    _LOGGER.debug("Automatically submitting generated securitycode")
                 self.automatic_steps += 1
                 await sleep(5)
                 if generated_securitycode:
