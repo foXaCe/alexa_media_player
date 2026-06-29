@@ -10,16 +10,19 @@
   "labels": ["dependencies"],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 0,
+  "rangeStrategy": "replace",
+  "osvVulnerabilityAlerts": true,
   "pre-commit": {
     "enabled": true
   },
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track the Python runtime deps pinned with == in the HA integration manifest.json (alexapy, ...)",
+      "description": "Track every Python runtime dep declared in the HA integration manifest.json (== pins and >=/range constraints)",
       "fileMatch": ["custom_components/alexa_media/manifest\\.json"],
       "matchStrings": [
-        "\"(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)==(?<currentValue>[0-9][^\"]*)\""
+        "\"(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)==(?<currentValue>[0-9][^\"]*)\"",
+        "\"(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)(?<currentValue>(>=|<=|~=|!=|<|>)[0-9][^\"]*)\""
       ],
       "datasourceTemplate": "pypi",
       "versioningTemplate": "pep440"
