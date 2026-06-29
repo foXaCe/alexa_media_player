@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.17.2] - 2026-06-29
+
+### Fixed
+
+- **Losing authentication on reboot (needing several reboots before it comes back) is now self-healing.** A flaky `get_devices` / GraphQL `Unauthenticated` right after a successful login at boot raises `AlexapyLoginError`, which the coordinator escalated straight to a manual reauth; for accounts whose in-place relogin does not recover, that parked the entry and broke Home Assistant's automatic `ConfigEntryNotReady` retry, so only a full fresh bootstrap (another reboot) worked. The first `LOGIN_ERROR_RETRY_TOLERANCE` (5) consecutive login errors are now treated as transient and surfaced as `UpdateFailed`, so HA re-bootstraps the entry on its own; the counter resets on any successful fetch and only sustained failures escalate to reauth. A single reboot now recovers by itself (#48).
+
 ## [5.17.1] - 2026-06-27
 
 ### Fixed
