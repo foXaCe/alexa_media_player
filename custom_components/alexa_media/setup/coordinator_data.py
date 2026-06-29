@@ -35,6 +35,7 @@ from ..const import (
     HTTP2_ERROR_THRESHOLD,
     LAST_PING_MAX_AGE_SECONDS,
     LAST_PUSH_INACTIVITY_SECONDS,
+    LOGIN_ERROR_RETRY_TOLERANCE,
 )
 from ..exceptions import TimeoutException
 from ..helpers import (
@@ -230,6 +231,9 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
                     ) = await asyncio.gather(*tasks)
 
                 fetch_time = time.monotonic() - start_fetch
+                # Fetch succeeded -> auth is healthy; clear the transient
+                # login-error tolerance counter.
+                account["setup_login_error_count"] = 0
                 _LOGGER.debug(
                     "[BOOT] API fetch (%d tasks, cached=%s) in %.2fs",
                     len(tasks) if tasks else 0,
@@ -388,10 +392,30 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
                     f"{DOMAIN}_notifications_init",
                 )
 
-    except (AlexapyLoginError, JSONDecodeError):
+    except (AlexapyLoginError, JSONDecodeError) as err:
+        # A login error here is often a transient auth blip at boot (a flaky
+        # get_devices / GraphQL "Unauthenticated" right after a successful login),
+        # not dead credentials. Retry a few times via UpdateFailed — the first
+        # refresh re-raises ConfigEntryNotReady and HA re-bootstraps the entry on
+        # its own, so a single reboot self-heals instead of parking on a manual
+        # reauth (which forced users to reboot repeatedly to dodge the blip).
+        error_count = account.get("setup_login_error_count", 0) + 1
+        account["setup_login_error_count"] = error_count
+        if error_count <= LOGIN_ERROR_RETRY_TOLERANCE:
+            _LOGGER.debug(
+                "%s: transient login error %s/%s; retrying setup instead of reauth",
+                hide_email(email),
+                error_count,
+                LOGIN_ERROR_RETRY_TOLERANCE,
+            )
+            raise UpdateFailed(
+                f"Transient Alexa login error (attempt {error_count}): {err}"
+            ) from err
+        account["setup_login_error_count"] = 0
         _LOGGER.debug(
-            "%s: Alexa API disconnected; attempting to relogin : status %s",
+            "%s: Alexa API disconnected after %s attempts; attempting to relogin : status %s",
             hide_email(email),
+            error_count,
             login_obj.status,
         )
         if login_obj.status:

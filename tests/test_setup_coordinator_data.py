@@ -19,6 +19,7 @@ from custom_components.alexa_media.const import (
     CONF_INCLUDE_DEVICES,
     DATA_ALEXAMEDIA,
     HTTP2_ERROR_THRESHOLD,
+    LOGIN_ERROR_RETRY_TOLERANCE,
 )
 from custom_components.alexa_media.setup.context import SetupContext
 from custom_components.alexa_media.setup.coordinator_data import (
@@ -127,14 +128,32 @@ async def test_raises_update_failed_on_connection_error():
         await async_update_data(ctx)
 
 
-async def test_login_error_fires_relogin_and_returns_none():
-    ctx, hass = _ctx({EMAIL: _full_account(_login())})
+async def test_transient_login_error_retries_via_update_failed():
+    # The first login error is treated as a transient boot blip: surfaced as
+    # UpdateFailed (-> ConfigEntryNotReady re-bootstrap), NOT escalated to reauth.
+    account = _full_account(_login())
+    ctx, hass = _ctx({EMAIL: account})
+    p1, p2, p3 = _patch_api(AsyncMock(side_effect=AlexapyLoginError("blip")))
+    with p1, p2, p3, pytest.raises(UpdateFailed):
+        await async_update_data(ctx)
+    assert account["setup_login_error_count"] == 1
+    fired_events = [call.args[0] for call in hass.bus.async_fire.call_args_list]
+    assert "alexa_media_relogin_required" not in fired_events
+
+
+async def test_login_error_escalates_to_relogin_after_tolerance():
+    # Once the transient budget is spent, a further login error escalates to a
+    # manual reauth and resets the counter.
+    account = _full_account(_login())
+    account["setup_login_error_count"] = LOGIN_ERROR_RETRY_TOLERANCE
+    ctx, hass = _ctx({EMAIL: account})
     p1, p2, p3 = _patch_api(AsyncMock(side_effect=AlexapyLoginError("bad")))
     with p1, p2, p3:
         result = await async_update_data(ctx)
     assert result is None
     fired_events = [call.args[0] for call in hass.bus.async_fire.call_args_list]
     assert "alexa_media_relogin_required" in fired_events
+    assert account["setup_login_error_count"] == 0
 
 
 async def test_too_many_requests_raises_update_failed():
@@ -266,10 +285,13 @@ async def test_happy_path_assembles_account_and_loads_platforms():
         },
         auth={"a": 1},
     )
+    # A leftover transient-error count must be cleared by a successful fetch.
+    account["setup_login_error_count"] = 3
     with _applied(_full_patches(api)):
         result = await async_update_data(ctx)
 
     assert result == {}
+    assert account["setup_login_error_count"] == 0
     media_player = account["devices"]["media_player"]
     assert media_player["S1"] is s1
     assert "S2" not in media_player

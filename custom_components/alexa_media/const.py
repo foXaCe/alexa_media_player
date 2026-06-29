@@ -107,6 +107,14 @@ NOTIFY_REFRESH_MAX_RETRIES = 3
 REAUTH_RAPID_RELOGIN_WINDOW_S = 60
 REAUTH_MAX_AUTO_ATTEMPTS = 3
 
+# Number of consecutive login errors in the coordinator update tolerated as
+# transient (e.g. a flaky get_devices / GraphQL "Unauthenticated" right after a
+# successful login at boot) before escalating to a manual reauth. Each tolerated
+# error is surfaced as UpdateFailed so the first refresh re-raises
+# ConfigEntryNotReady and Home Assistant re-bootstraps the entry on its own — a
+# single reboot self-heals instead of needing several manual reboots.
+LOGIN_ERROR_RETRY_TOLERANCE = 5
+
 # push-health magic numbers
 HTTP2_ERROR_THRESHOLD = 5
 LAST_PUSH_INACTIVITY_SECONDS = 600.0
