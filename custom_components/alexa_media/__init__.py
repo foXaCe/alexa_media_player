@@ -163,23 +163,6 @@ def _patch_morsel_partitioned() -> None:
 _patch_morsel_partitioned()
 
 
-def _sanitize_cookies(cookies):
-    """Flatten cookies to a plain ``{name: value}`` mapping.
-
-    ``AlexaLogin.load_cookie()`` may return a mapping of ``http.cookies.Morsel``
-    objects (for example restored from a pickled aiohttp cookie jar). Reducing
-    them to plain string values keeps ``AlexaLogin.login(cookies=...)`` on its
-    documented input type and avoids passing stale Morsels around. (The actual
-    ``KeyError: 'partitioned'`` crash is fixed by ``_patch_morsel_partitioned``.)
-    """
-    if not cookies or not hasattr(cookies, "items"):
-        return cookies
-    return {
-        str(key): (value.value if isinstance(value, Morsel) else value)
-        for key, value in cookies.items()
-    }
-
-
 async def async_setup(hass, config):
     """Set up the Alexa domain."""
     # Initialize metrics
@@ -399,53 +382,45 @@ async def async_setup_entry(hass, config_entry):
     hass.bus.async_listen("alexa_media_relogin_success", login_success)
     try:
         _t = time.monotonic()
-        cookies = _sanitize_cookies(await login.load_cookie())
+        # Pass the raw cookies from alexapy's own loader straight to login(), like
+        # upstream. The fork used to flatten them to {name: value} and preload the
+        # aiohttp jar from the on-disk file first; that corrupted the session, so
+        # login(cookies=...) produced an UNauthenticated session and every API
+        # call bounced to /ap/signin ("Expecting value: line 1 column 1").
+        cookies = await login.load_cookie()
         cookie_login_ok = False
-        if login._session is None or getattr(login._session, "closed", False):
-            login._create_session(True)
-        # aiohttp >= 3.14 saves cookies in a JSON format that AlexaLogin's
-        # pickle-based load_cookie() cannot read, so `cookies` is empty there.
-        # Reload the cache into the session jar with aiohttp's own (JSON-aware)
-        # loader, off the event loop, so the regional bootstrap probe below can
-        # reuse a cached session instead of forcing a full credential login.
-        cookiefile = (
-            login._cookiefile[0] if getattr(login, "_cookiefile", None) else None
-        )
-        if cookiefile and os.path.exists(cookiefile):
+        if cookies:
             try:
-                await hass.async_add_executor_job(
-                    login._session.cookie_jar.load, cookiefile
-                )
-            except Exception as ex:
-                # Best-effort preload only. alexapy >= 1.29.24 persists cookies in
-                # its own versioned JSON format, which aiohttp's CookieJar.load
-                # cannot parse; alexapy's load_cookie() handles it, so any failure
-                # here is non-fatal.
-                _LOGGER.debug("[BOOT] Could not preload cookie jar: %s", ex)
-        try:
-            # Use the account's regional Alexa host (e.g. alexa.amazon.fr), not a
-            # hardcoded alexa.amazon.com, so non-US accounts get the fast path too.
-            async with login._session.get(
-                f"https://alexa.{login.url}/api/bootstrap",
-                cookies=cookies,
-                ssl=login._ssl,
-                allow_redirects=False,
-            ) as response:
-                if response.status == 200:
-                    data = loads(await response.text())
-                    auth = (data or {}).get("authentication") or {}
-                    customer_email = (auth.get("customerEmail") or "").lower()
-                    if auth.get("authenticated") and customer_email == email.lower():
-                        _LOGGER.debug("[BOOT] Cookie auth confirmed via /api/bootstrap")
-                        login.status["login_successful"] = True
-                        login.customer_id = auth.get("customerId")
-                        login.stats["login_timestamp"] = datetime.now()
-                        login.stats["api_calls"] = 0
-                        await login.check_domain()
-                        await login.finalize_login()
-                        cookie_login_ok = True
-        except (JSONDecodeError, ValueError, aiohttp.ClientError, KeyError) as ex:
-            _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
+                if login._session is None or getattr(login._session, "closed", False):
+                    login._create_session(True)
+                # Account's regional Alexa host (e.g. alexa.amazon.fr), not a
+                # hardcoded alexa.amazon.com, so non-US accounts get the fast path.
+                async with login._session.get(
+                    f"https://alexa.{login.url}/api/bootstrap",
+                    cookies=cookies,
+                    ssl=login._ssl,
+                    allow_redirects=False,
+                ) as response:
+                    if response.status == 200:
+                        data = loads(await response.text())
+                        auth = (data or {}).get("authentication") or {}
+                        customer_email = (auth.get("customerEmail") or "").lower()
+                        if (
+                            auth.get("authenticated")
+                            and customer_email == email.lower()
+                        ):
+                            _LOGGER.debug(
+                                "[BOOT] Cookie auth confirmed via /api/bootstrap"
+                            )
+                            login.status["login_successful"] = True
+                            login.customer_id = auth.get("customerId")
+                            login.stats["login_timestamp"] = datetime.now()
+                            login.stats["api_calls"] = 0
+                            await login.check_domain()
+                            await login.finalize_login()
+                            cookie_login_ok = True
+            except (JSONDecodeError, ValueError, aiohttp.ClientError) as ex:
+                _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
         if not cookie_login_ok:
             await login.login(cookies=cookies)
         _LOGGER.debug("[BOOT] login completed in %.2fs", time.monotonic() - _t)

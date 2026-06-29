@@ -263,6 +263,8 @@ async def test_async_setup_entry_cookie_bootstrap_success_skips_login():
         runtime_data=None,
     )
     login = _make_login()
+    # Cached cookies present -> the /api/bootstrap probe runs.
+    login.load_cookie = AsyncMock(return_value={"session-id": "x"})
     response = MagicMock()
     response.status = 200
     response.text = AsyncMock(return_value=_BOOTSTRAP_OK)
@@ -288,33 +290,14 @@ async def test_async_setup_entry_recreates_closed_session():
         runtime_data=None,
     )
     login = _make_login()
+    # Cached cookies present -> the probe path runs and recreates the closed session.
+    login.load_cookie = AsyncMock(return_value={"session-id": "x"})
     login._session.closed = True  # forces login._create_session(True)
     with _applied(_setup_entry_patches(login)):
         result = await amp.async_setup_entry(hass, entry)
 
     assert result is True
     login._create_session.assert_called_once_with(True)
-
-
-async def test_async_setup_entry_preloads_cookie_jar_best_effort():
-    hass = _make_hass()
-    # The JSON-aware preload is best-effort: a failure must not abort setup.
-    hass.async_add_executor_job = AsyncMock(side_effect=ValueError("bad jar"))
-    entry = _make_config_entry(
-        data={CONF_EMAIL: EMAIL, CONF_PASSWORD: "pw", CONF_URL: URL},
-        runtime_data=None,
-    )
-    login = _make_login()
-    login._cookiefile = ["/tmp/alexa.pickle"]
-    with (
-        _applied(_setup_entry_patches(login)),
-        patch(f"{_PKG}.os.path.exists", return_value=True),
-    ):
-        result = await amp.async_setup_entry(hass, entry)
-
-    assert result is True
-    hass.async_add_executor_job.assert_awaited_once()
-    login.login.assert_awaited_once()
 
 
 async def test_async_setup_entry_returns_false_when_login_status_false():
