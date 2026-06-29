@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [5.17.3] - 2026-06-29
+
+### Fixed
+
+- **Losing authentication on reboot (needing several reboots before it came back) is fixed at the source.** The fork had diverged from upstream in the boot login path: it flattened the cookies from `AlexaLogin.load_cookie()` to `{name: value}` (dropping domain/path/flags) and preloaded the on-disk cookie file into the aiohttp session jar before the bootstrap probe. Both corrupted the session handed to `login(cookies=...)`, so the login produced an unauthenticated session (`login_successful` stayed unset) and every API call bounced to `/ap/signin` (`Expecting value: line 1 column 1`). The boot login now passes the raw `load_cookie()` result straight through and only probes `/api/bootstrap` when cookies exist — matching upstream. Validated live: login completes and entities come back without repeated reboots (#53).
+- **2FA security codes and TOTP tokens are no longer logged in clear text** at `DEBUG` in the config flow (flagged by CodeQL `security-and-quality`) (#51).
+
+### Changed
+
+- **Renovate scope broadened**: the custom manifest manager now tracks every runtime dependency (not just the `==` pins), with `rangeStrategy: replace` to avoid churning open `>=` floors, plus OSV vulnerability alerts. CodeQL now runs the `security-and-quality` query suite (#50).
+
 ## [5.17.2] - 2026-06-29
 
 ### Fixed
