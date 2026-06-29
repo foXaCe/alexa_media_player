@@ -10,6 +10,7 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime, timedelta
 import functools
 from http.cookies import Morsel
@@ -50,6 +51,7 @@ import voluptuous as vol
 from .config_flow import in_progress_instances
 from .const import (
     ALEXA_COMPONENTS,
+    BOOT_LOGIN_RETRY_TOLERANCE,
     CONF_ACCOUNTS,
     CONF_DEBUG,
     CONF_EXCLUDE_DEVICES,
@@ -422,6 +424,7 @@ async def async_setup_entry(hass, config_entry):
                 # cannot parse; alexapy's load_cookie() handles it, so any failure
                 # here is non-fatal.
                 _LOGGER.debug("[BOOT] Could not preload cookie jar: %s", ex)
+        probe_status = None
         try:
             # Use the account's regional Alexa host (e.g. alexa.amazon.fr), not a
             # hardcoded alexa.amazon.com, so non-US accounts get the fast path too.
@@ -431,6 +434,7 @@ async def async_setup_entry(hass, config_entry):
                 ssl=login._ssl,
                 allow_redirects=False,
             ) as response:
+                probe_status = response.status
                 if response.status == 200:
                     data = loads(await response.text())
                     auth = (data or {}).get("authentication") or {}
@@ -447,8 +451,66 @@ async def async_setup_entry(hass, config_entry):
         except (JSONDecodeError, ValueError, aiohttp.ClientError, KeyError) as ex:
             _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
         if not cookie_login_ok:
-            await login.login(cookies=cookies)
-        _LOGGER.debug("[BOOT] login completed in %.2fs", time.monotonic() - _t)
+            # The cached cookies did NOT authenticate (the /api/bootstrap probe did
+            # not return an authenticated 200 — typically a redirect to the Amazon
+            # sign-in page). They were preloaded into the session cookie jar for the
+            # probe above; if we leave them there they ride along with the fresh
+            # login and bounce every subsequent API call back to /ap/signin (the
+            # "redirected to signin -> Expecting value: line 1 column 1" errors at
+            # boot). Drop the stale jar and log in cleanly via OAuth so the API
+            # session is actually authenticated.
+            jar = getattr(login._session, "cookie_jar", None)
+            stale = len(jar) if jar is not None else -1
+            if jar is not None:
+                with contextlib.suppress(Exception):
+                    jar.clear()
+            _LOGGER.debug(
+                "[BOOT] cookie auth not confirmed (probe status=%s); cleared %s stale "
+                "session cookie(s), doing a clean OAuth login",
+                probe_status,
+                stale,
+            )
+            await login.login()
+        jar = getattr(login._session, "cookie_jar", None)
+        _LOGGER.debug(
+            "[BOOT] login completed in %.2fs (cookie_fast_path=%s, session_cookies=%s, "
+            "login_successful=%s)",
+            time.monotonic() - _t,
+            cookie_login_ok,
+            len(jar) if jar is not None else -1,
+            (login.status or {}).get("login_successful"),
+        )
+        account_data = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+        if not (login.status or {}).get("login_successful"):
+            # The OAuth login did not complete: login.status stays empty when
+            # Amazon's token/login flow is flaky at boot, leaving an
+            # unauthenticated session whose API calls bounce to /ap/signin. A
+            # manual reboot recovers because it builds a *fresh* AlexaLogin;
+            # reusing this poisoned one (the in-place reauth) keeps failing the
+            # same way. Discard it and let HA retry setup, which rebuilds a clean
+            # login — i.e. a reboot, but automatic and bounded.
+            attempts = account_data.get("boot_login_failures", 0) + 1
+            account_data["boot_login_failures"] = attempts
+            if attempts <= BOOT_LOGIN_RETRY_TOLERANCE:
+                _LOGGER.debug(
+                    "[BOOT] OAuth login did not complete (attempt %s/%s); discarding "
+                    "the session and retrying setup with a fresh login",
+                    attempts,
+                    BOOT_LOGIN_RETRY_TOLERANCE,
+                )
+                account_data.pop("login_obj", None)
+                with contextlib.suppress(Exception):
+                    await login.reset()
+                raise ConfigEntryNotReady(
+                    "Alexa login did not complete; retrying with a fresh session"
+                )
+            _LOGGER.warning(
+                "%s: Alexa login did not complete after %s attempts; "
+                "manual re-authentication required",
+                hide_email(email),
+                attempts,
+            )
+        account_data["boot_login_failures"] = 0
         _t = time.monotonic()
         if await test_login_status(hass, config_entry, login):
             _LOGGER.debug("[BOOT] test_login_status in %.2fs", time.monotonic() - _t)

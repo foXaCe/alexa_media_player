@@ -128,7 +128,13 @@ def _make_login(url=URL):
     login._ssl = None
     login.customer_id = None
     login.load_cookie = AsyncMock(return_value={})
-    login.login = AsyncMock()
+
+    async def _login_ok(*args, **kwargs):
+        # Default: a successful OAuth login sets login_successful (the boot path
+        # now retries when it stays unset).
+        login.status["login_successful"] = True
+
+    login.login = AsyncMock(side_effect=_login_ok)
     login.check_domain = AsyncMock()
     login.finalize_login = AsyncMock()
     login.reset = AsyncMock()
@@ -279,6 +285,29 @@ async def test_async_setup_entry_cookie_bootstrap_success_skips_login():
     assert login.status["login_successful"] is True
     assert login.customer_id == "cid"
     setup_alexa.assert_awaited_once()
+
+
+async def test_async_setup_entry_retries_on_incomplete_login():
+    """A flaky OAuth login that never marks success is retried with a fresh login."""
+    hass = _make_hass()
+    entry = _make_config_entry(
+        data={CONF_EMAIL: EMAIL, CONF_PASSWORD: "pw", CONF_URL: URL},
+        runtime_data=None,
+    )
+    login = _make_login()
+    # Flaky OAuth: login() runs but leaves login.status empty (login_successful unset).
+    login.login = AsyncMock()
+    setup_alexa = AsyncMock(return_value=True)
+    with _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)):
+        with pytest.raises(ConfigEntryNotReady):
+            await amp.async_setup_entry(hass, entry)
+    # The poisoned login_obj is discarded (so the HA retry rebuilds a clean one)
+    # and the session is reset; setup_alexa is never reached with a dead session.
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][EMAIL]
+    assert account.get("login_obj") is None
+    assert account["boot_login_failures"] == 1
+    login.reset.assert_awaited()
+    setup_alexa.assert_not_awaited()
 
 
 async def test_async_setup_entry_recreates_closed_session():

@@ -107,6 +107,14 @@ NOTIFY_REFRESH_MAX_RETRIES = 3
 REAUTH_RAPID_RELOGIN_WINDOW_S = 60
 REAUTH_MAX_AUTO_ATTEMPTS = 3
 
+# Boot OAuth login is flaky for some accounts/regions: AlexaLogin.login() returns
+# without setting login_successful, leaving an unauthenticated session whose API
+# calls bounce to /ap/signin. A manual reboot recovers because it builds a fresh
+# AlexaLogin; reusing the poisoned one keeps failing. We instead discard it and
+# let Home Assistant retry setup (rebuilding a clean login) this many times before
+# falling back to a manual re-authentication.
+BOOT_LOGIN_RETRY_TOLERANCE = 8
+
 # Number of consecutive login errors in the coordinator update tolerated as
 # transient (e.g. a flaky get_devices / GraphQL "Unauthenticated" right after a
 # successful login at boot) before escalating to a manual reauth. Each tolerated
