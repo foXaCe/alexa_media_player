@@ -1,6 +1,6 @@
 # Runtime dependencies (mirror of custom_components/alexa_media/manifest.json)
 # so the integration is importable during tests.
-alexapy==1.29.24
+alexapy==1.29.25
 aiohttp>=3.8.1
 packaging>=20.3
 wrapt>=1.12.1
