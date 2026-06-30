@@ -493,12 +493,19 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         ctx, hass.data[DATA_ALEXAMEDIA]["accounts"][email]
     )
 
+    # Connect the HTTP/2 push channel concurrently with the first data refresh.
+    # The first refresh does not depend on push status: its `first_run` branch is
+    # taken regardless (account["first_run"] starts True) and `_push_healthy(None)`
+    # is side-effect-free, so overlapping hides http2_connect's (variable) latency
+    # under the longer refresh instead of paying for it serially on the boot path.
     _t = time.monotonic()
-    http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-        "http2"
-    ] = await setup_push.http2_connect(ctx)
-    _LOGGER.debug("[BOOT] http2_connect in %.2fs", time.monotonic() - _t)
-    coordinator = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get("coordinator")
+    account_data = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+    http2_task = hass.async_create_task(
+        setup_push.http2_connect(ctx),
+        f"{DOMAIN}_http2_connect_{hide_email(email)}",
+    )
+
+    coordinator = account_data.get("coordinator")
 
     # Get runtime_data for optimized coordinator
     runtime_data = (
@@ -508,7 +515,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     if coordinator is None:
         _LOGGER.debug("%s: Creating optimized coordinator", hide_email(email))
 
-        # Use optimized coordinator with debouncing
+        # Use optimized coordinator with debouncing. The poll interval is
+        # finalised once the http2 status is known (below); the first refresh is
+        # a manual call and does not depend on it.
         coordinator = AlexaMediaCoordinator(
             hass=hass,
             runtime_data=runtime_data,
@@ -518,27 +527,35 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             scan_interval=scan_interval,
         )
 
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["coordinator"] = coordinator
-        # Set correct interval now that http2 status is known
-        coordinator.set_http2_status(bool(http2_enabled))
+        account_data["coordinator"] = coordinator
+        coordinator_is_optimized = True
 
         # Also store in runtime_data for type-safe access
         if runtime_data:
             runtime_data.coordinator = coordinator
     else:
         _LOGGER.debug("%s: setup_alexa: Reusing coordinator", hide_email(email))
-        # Use the optimized set_http2_status method if available
-        if isinstance(coordinator, AlexaMediaCoordinator):
-            coordinator.set_http2_status(bool(http2_enabled))
-        else:
-            coordinator.update_interval = timedelta(
-                seconds=scan_interval * 10 if http2_enabled else scan_interval
-            )
-    # Fetch initial data
+        coordinator_is_optimized = isinstance(coordinator, AlexaMediaCoordinator)
+
+    # Fetch initial data while the push channel connects in parallel.
     _LOGGER.debug("%s: setup_alexa: Starting coordinator refresh", hide_email(email))
-    _t = time.monotonic()
+    _t_refresh = time.monotonic()
     await coordinator.async_config_entry_first_refresh()
-    _LOGGER.debug("[BOOT] first_refresh in %.2fs", time.monotonic() - _t)
+    _LOGGER.debug("[BOOT] first_refresh in %.2fs", time.monotonic() - _t_refresh)
+
+    # Finalise the push status now that both the refresh and the connect have run,
+    # then set the correct poll interval for subsequent updates.
+    http2_enabled = account_data["http2"] = await http2_task
+    _LOGGER.debug(
+        "[BOOT] http2_connect in %.2fs (overlapped with first_refresh)",
+        time.monotonic() - _t,
+    )
+    if coordinator_is_optimized:
+        coordinator.set_http2_status(bool(http2_enabled))
+    else:
+        coordinator.update_interval = timedelta(
+            seconds=scan_interval * 10 if http2_enabled else scan_interval
+        )
 
     # Service actions are registered once in async_setup (action-setup), so there
     # is nothing to register per config entry here.

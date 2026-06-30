@@ -106,6 +106,11 @@ def _make_hass(data=None):
         return MagicMock()
 
     hass.async_create_background_task = MagicMock(side_effect=_eat)
+    # async_create_task runs the coroutine as a real awaitable task so callers
+    # that await the returned task (e.g. the overlapped http2_connect) work.
+    hass.async_create_task = MagicMock(
+        side_effect=lambda coro, *a, **k: asyncio.ensure_future(coro)
+    )
     return hass
 
 
