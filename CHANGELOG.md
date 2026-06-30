@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [5.17.4] - 2026-06-30
+
+### Changed
+
+- **Faster startup: the HTTP/2 push channel now connects concurrently with the coordinator's first refresh** instead of serially before it. The first refresh does not depend on push status (its branch is gated on `first_run`, always `True` at boot, and `_push_healthy(None)` is side-effect-free), so `http2_connect`'s variable latency no longer sits on the boot critical path; the poll interval is finalised right after both complete. Verified live: the coordinator refresh starts immediately and entities come up normally (#57).
+- Dropped a dead timing assignment in the coordinator flagged by CodeQL (#55).
+
 ## [5.17.3] - 2026-06-29
 
 ### Fixed
