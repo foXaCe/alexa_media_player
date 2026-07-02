@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.18.0] - 2026-07-02
+
 ### Added
 
 - **Optimistic boot: entry setup dropped from ~2.3-3.3s to ~1.3s.** The device inventory is persisted to `.storage/alexa_media.<entry_id>.device_snapshot` (private file) after each refresh; on the next startup all entities are recreated immediately from that snapshot — the boot path keeps only the login probe as an Amazon round-trip — while the real first refresh and the HTTP/2 push connection finish in the background (~1s later). Current include/exclude filters are applied to the snapshot so devices excluded since the last run are not resurrected; a missing or corrupt snapshot falls back to the classic blocking first refresh; the snapshot is deleted with the config entry.
@@ -16,6 +18,7 @@
 
 ### Changed
 
+- Update alexapy to 1.29.25 (#56).
 - **Architecture**: `entry.runtime_data` is always assigned (typed `AlexaConfigEntry` alias); a failed boot login now raises `ConfigEntryAuthFailed` (entry shows auth-required instead of a generic error); Amazon 429 throttling uses `UpdateFailed(retry_after=60s)`.
 - **Refactor**: `setup/coordinator_data.async_update_data` (573-line function) decomposed into named steps with a *named* fetch plan (no more positional `pop()` unpacking); `setup/push.http2_handler` (436 lines) decomposed into a `_PUSH_HANDLERS` dispatch table; `MODEL_IDS` moved to `model_ids.py`; `OptionsFlowHandler` modernized (no `config_entry` constructor parameter).
 - **Dead code removed** (~550 lines): platform-level `async_unload_entry` functions (never called by HA), `hidden` properties, YAML `discovery_info` branches, legacy import shims (`SwitchDevice`, `STATE_ALARM_*`, `MediaPlayerDevice`), unused metrics/cache API, `services.unregister`, unused constants.

@@ -1,19 +1,27 @@
 {
   "domain": "alexa_media",
   "name": "Alexa Media Player",
-  "codeowners": ["@foXaCe"],
+  "codeowners": [
+    "@foXaCe"
+  ],
   "config_flow": true,
-  "dependencies": ["persistent_notification", "http"],
+  "dependencies": [
+    "persistent_notification",
+    "http"
+  ],
   "documentation": "https://github.com/foXaCe/alexa_media_player/wiki",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/foXaCe/alexa_media_player/issues",
-  "loggers": ["alexapy", "authcaptureproxy"],
+  "loggers": [
+    "alexapy",
+    "authcaptureproxy"
+  ],
   "requirements": [
     "alexapy==1.29.25",
     "packaging>=20.3",
     "wrapt>=1.14.0",
     "dictor>=0.1.12,<0.2"
   ],
-  "version": "5.17.4"
+  "version": "5.18.0"
 }
