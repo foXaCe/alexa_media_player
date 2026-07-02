@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bus listeners no longer leak across reloads**: the `relogin`/`login_success` event listeners and the options update listener are now registered through `entry.async_on_unload`, so Home Assistant unsubscribes them on unload and on failed setup (previously they accumulated on every reload).
+- **Deprecated alarm `state` override removed**: the Guard panel now implements `alarm_state` returning `AlarmControlPanelState` (the `state` property became `@final` in HA 2026.7).
+- **ffmpeg TTS conversion no longer blocks the event loop**: it runs in the executor, and a conversion failure now aborts the TTS cleanly instead of relying on a dead return-code check.
+- Latent logic bugs: `sensor.py` `in ("Reminder")` string-membership typo, `switch.py` unload `KeyError`, `alarm_control_panel.py` `{} or media_players` (`None` crash) and always-empty `extra_state_attributes`, `notify.convert()` missing else branch, `setup/bluetooth.py` unguarded dict access on push/discovery races, malformed capability states no longer abort a whole refresh.
+- HA 2026.6 deprecation: `_abort_if_unique_id_configured` no longer combines `reload_on_update` with the update listener.
+
+### Changed
+
+- **Architecture**: `entry.runtime_data` is always assigned (typed `AlexaConfigEntry` alias); a failed boot login now raises `ConfigEntryAuthFailed` (entry shows auth-required instead of a generic error); Amazon 429 throttling uses `UpdateFailed(retry_after=60s)`.
+- **Refactor**: `setup/coordinator_data.async_update_data` (573-line function) decomposed into named steps with a *named* fetch plan (no more positional `pop()` unpacking); `setup/push.http2_handler` (436 lines) decomposed into a `_PUSH_HANDLERS` dispatch table; `MODEL_IDS` moved to `model_ids.py`; `OptionsFlowHandler` modernized (no `config_entry` constructor parameter).
+- **Dead code removed** (~550 lines): platform-level `async_unload_entry` functions (never called by HA), `hidden` properties, YAML `discovery_info` branches, legacy import shims (`SwitchDevice`, `STATE_ALARM_*`, `MediaPlayerDevice`), unused metrics/cache API, `services.unregister`, unused constants.
+- **`except BaseException` eliminated** from `http2_connect`: real task cancellation propagates, while internal `CancelledError`s leaked by alexapy fall back to polling.
+- **Quality**: all 17 locales now have strict key parity (the 6 `exceptions.*` messages were missing in 15 locales); `hacs.json` HA minimum aligned to 2025.2; pytest coverage is a hard gate (`--cov-fail-under=90`); `quality_scale.yaml` self-assessment added; relogin bus event names centralized in `const.py`.
+
 ## [5.17.4] - 2026-06-30
 
 ### Changed
