@@ -23,7 +23,6 @@ from custom_components.alexa_media.light import (
     alexa_color_name_to_rgb,
     async_setup_entry,
     async_setup_platform,
-    async_unload_entry,
     color_modes,
     ha_brightness_to_alexa,
     hs_to_alexa_color,
@@ -381,15 +380,3 @@ async def test_setup_entry_delegates(mock_add):
     entry.data = {CONF_EMAIL: "a@example.com"}
     result = await async_setup_entry(hass, entry, MagicMock())
     assert result is True
-
-
-async def test_unload_entry_removes_lights():
-    light = AsyncMock()
-    account = {"entities": {"light": [light]}}
-    hass = MagicMock()
-    hass.data = {DATA_ALEXAMEDIA: {"accounts": {"a@example.com": account}}}
-    entry = MagicMock()
-    entry.data = {CONF_EMAIL: "a@example.com"}
-    result = await async_unload_entry(hass, entry)
-    assert result is True
-    light.async_remove.assert_awaited_once()

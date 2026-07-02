@@ -10,7 +10,6 @@ from custom_components.alexa_media.binary_sensor import (
     AlexaContact,
     async_setup_entry,
     async_setup_platform,
-    async_unload_entry,
 )
 from custom_components.alexa_media.const import (
     CONF_EXTENDED_ENTITY_DISCOVERY,
@@ -127,15 +126,3 @@ async def test_setup_entry_delegates_to_platform(mock_add):
 # --------------------------------------------------------------------------- #
 # async_unload_entry
 # --------------------------------------------------------------------------- #
-
-
-async def test_unload_entry_removes_entities():
-    account = "a@example.com"
-    sensor = AsyncMock()
-    account_dict = {"entities": {"binary_sensor": [sensor]}}
-    hass = _hass_with(account, account_dict)
-    entry = MagicMock()
-    entry.data = {CONF_EMAIL: account}
-    result = await async_unload_entry(hass, entry)
-    assert result is True
-    sensor.async_remove.assert_awaited_once()

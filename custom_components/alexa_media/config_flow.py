@@ -28,7 +28,6 @@ from alexapy import (
     AlexapyPyotpInvalidKey,
     hide_email,
 )
-from awesomeversion import AwesomeVersion
 from homeassistant import config_entries
 from homeassistant.components.http.view import HomeAssistantView
 from homeassistant.components.persistent_notification import (
@@ -39,7 +38,6 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_URL,
-    __version__ as HAVERSION,
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult, UnknownFlow
@@ -85,6 +83,7 @@ from .const import (
     DEFAULT_QUEUE_DELAY,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_RELOGIN_SUCCESS,
     ISSUE_URL,
     REAUTH_MAX_AUTO_ATTEMPTS,
     REAUTH_RAPID_RELOGIN_WINDOW_S,
@@ -729,7 +728,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 )
                 _LOGGER.debug("Reauth successful for %s", hide_email(email))
                 self.hass.bus.async_fire(
-                    "alexa_media_relogin_success",
+                    EVENT_RELOGIN_SUCCESS,
                     event_data={"email": hide_email(email), "url": login.url},
                 )
                 host = urlparse(login.url).hostname or login.url
@@ -768,7 +767,12 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
             _LOGGER.debug(
                 "Setting up Alexa devices with %s", dict(redact_sensitive(self.config))
             )
-            self._abort_if_unique_id_configured(self.config)
+            # reload_on_update=False: the entry's update listener already
+            # reloads on data changes; combining both is deprecated (HA 2026.6,
+            # hard error in 2026.12).
+            self._abort_if_unique_id_configured(
+                updates=self.config, reload_on_update=False
+            )
             return self.async_create_entry(
                 title=f"{login.email} - {login.url}", data=self.config
             )
@@ -957,17 +961,15 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle a option flow for Alexa Media."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
         self.config = OrderedDict()
-        if AwesomeVersion(HAVERSION) < "2024.12":
-            self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

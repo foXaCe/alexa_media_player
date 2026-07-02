@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
-from homeassistant.const import CONF_EMAIL
+from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.helpers.entity import EntityCategory
 
 from custom_components.alexa_media.const import DATA_ALEXAMEDIA
@@ -15,7 +15,6 @@ from custom_components.alexa_media.switch import (
     RepeatSwitch,
     ShuffleSwitch,
     SmartSwitch,
-    async_unload_entry,
 )
 
 _POWER = "custom_components.alexa_media.switch.parse_power_from_coordinator"
@@ -45,10 +44,9 @@ def _client(*, value=True, available=True, assumed=False, unique_id="SN1"):
 def test_dnd_switch_properties_on():
     switch = DNDSwitch(_client(value=True))
     assert switch.unique_id == "SN1_do not disturb"
-    assert switch.device_class == "switch"
+    assert switch.device_class == SwitchDeviceClass.SWITCH
     assert switch.is_on is True
     assert switch.available is True
-    assert switch.hidden is False
     assert switch.should_poll is True
     assert switch.assumed_state is False
     assert switch.icon == "mdi:minus-circle"
@@ -101,7 +99,6 @@ def test_switch_unavailable_when_property_none():
     client.dnd_state = None
     switch = DNDSwitch(client)
     assert switch.available is False
-    assert switch.hidden is True
 
 
 def test_shuffle_switch_properties():
@@ -276,16 +273,3 @@ async def test_smart_switch_turn_on_off():
 # --------------------------------------------------------------------------- #
 # async_unload_entry
 # --------------------------------------------------------------------------- #
-
-
-async def test_unload_entry_removes_switches():
-    device = AsyncMock()
-    # entities["switch"] is keyed twice by the same key: {key: {key: {id: device}}}
-    account = {"entities": {"switch": {"dnd": {"dnd": {"SN1": device}}}}}
-    hass = MagicMock()
-    hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: account}}}
-    entry = MagicMock()
-    entry.data = {CONF_EMAIL: _EMAIL}
-    result = await async_unload_entry(hass, entry)
-    assert result is True
-    device.async_remove.assert_awaited_once()

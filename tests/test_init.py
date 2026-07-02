@@ -26,7 +26,7 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
 )
 from homeassistant.data_entry_flow import UnknownFlow
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 import pytest
 
 import custom_components.alexa_media as amp
@@ -38,7 +38,6 @@ from custom_components.alexa_media.const import (
     CONF_OTPSECRET,
     CONF_SCAN_INTERVAL,
     DATA_ALEXAMEDIA,
-    DATA_LISTENER,
     DEPENDENT_ALEXA_COMPONENTS,
     DOMAIN,
 )
@@ -47,7 +46,6 @@ from custom_components.alexa_media.coordinator import AlexaMediaCoordinator
 EMAIL = "user@example.com"
 URL = "amazon.com"
 _PKG = "custom_components.alexa_media"
-
 
 # --------------------------------------------------------------------------- #
 # helpers / fakes
@@ -252,7 +250,9 @@ async def test_async_setup_entry_cookie_path_fails_falls_back_to_login():
     assert account["second_account_index"] == 0
     # Account dict is fully provisioned with the expected device/entity buckets.
     assert set(account["devices"]) >= {"media_player", "switch", "guard"}
-    assert account[DATA_LISTENER]  # update listener registered
+    # Update listener registered and handed to HA for automatic cleanup.
+    entry.add_update_listener.assert_called_once_with(amp.update_listener)
+    assert entry.async_on_unload.called
     # runtime_data was created (it started as None).
     assert entry.runtime_data is not None
     # index 0 -> the HOMEASSISTANT_STOP/STARTED listeners are registered.
@@ -305,7 +305,7 @@ async def test_async_setup_entry_recreates_closed_session():
     login._create_session.assert_called_once_with(True)
 
 
-async def test_async_setup_entry_returns_false_when_login_status_false():
+async def test_async_setup_entry_raises_auth_failed_when_login_status_false():
     hass = _make_hass()
     entry = _make_config_entry(
         data={CONF_EMAIL: EMAIL, CONF_PASSWORD: "pw", CONF_URL: URL},
@@ -320,9 +320,9 @@ async def test_async_setup_entry_returns_false_when_login_status_false():
             test_login=AsyncMock(return_value=False),
         )
     ):
-        result = await amp.async_setup_entry(hass, entry)
+        with pytest.raises(ConfigEntryAuthFailed):
+            await amp.async_setup_entry(hass, entry)
 
-    assert result is False
     setup_alexa.assert_not_awaited()
 
 
@@ -538,7 +538,6 @@ async def test_setup_alexa_reuses_legacy_coordinator_sets_interval():
 
 
 async def test_async_unload_entry_full_cleanup():
-    listener = MagicMock()
     account = {
         "notifications_refresh_task": None,
         "notifications_init_task": None,
@@ -546,7 +545,6 @@ async def test_async_unload_entry_full_cleanup():
         "service_update_last_called_task": None,
         "last_called_probe_task": _FakeTask(),
         "confirm_refresh_debouncer": MagicMock(),
-        DATA_LISTENER: [listener],
     }
     hass = _make_hass(
         data={
@@ -583,7 +581,6 @@ async def test_async_unload_entry_full_cleanup():
     )
     notify_unload.assert_awaited_once()
     close_conns.assert_awaited_once_with(hass, EMAIL)
-    listener.assert_called_once()
     dismiss.assert_called_once()
     # The in-progress flow was aborted during config_flows cleanup.
     hass.config_entries.flow.async_abort.assert_called_once_with("fid")
@@ -600,7 +597,6 @@ async def test_async_unload_entry_keeps_residual_data_structure():
         "service_update_last_called_task": None,
         "last_called_probe_task": None,
         "confirm_refresh_debouncer": None,
-        DATA_LISTENER: [],
     }
     hass = _make_hass(
         data={
@@ -644,7 +640,6 @@ async def test_async_unload_entry_component_error_is_swallowed():
         "service_update_last_called_task": None,
         "last_called_probe_task": None,
         "confirm_refresh_debouncer": None,
-        DATA_LISTENER: [],
     }
     hass = _make_hass(
         data={DATA_ALEXAMEDIA: {"accounts": {EMAIL: account}, "config_flows": {}}}

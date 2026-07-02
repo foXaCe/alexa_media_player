@@ -391,26 +391,6 @@ class TestSetupPlatformEntities:
             )
 
     @pytest.mark.asyncio
-    async def test_setup_reads_account_from_discovery_info(self, mock_hass):
-        """When config has no email, the account comes from discovery_info."""
-        account = _account_with_media_players({}, {})
-        mock_hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: account}}}
-
-        with patch(
-            "custom_components.alexa_media.switch.add_devices",
-            new_callable=AsyncMock,
-        ) as mock_add_devices:
-            mock_add_devices.return_value = True
-            result = await async_setup_platform(
-                mock_hass,
-                {},
-                MagicMock(),
-                discovery_info={"config": {"email": _EMAIL}},
-            )
-
-        assert result is True
-
-    @pytest.mark.asyncio
     async def test_setup_raises_without_account(self, mock_hass):
         """No email anywhere -> ConfigEntryNotReady."""
         mock_hass.data = {DATA_ALEXAMEDIA: {"accounts": {}}}

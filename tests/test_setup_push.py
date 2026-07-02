@@ -1,5 +1,6 @@
 """Tests for the simpler HTTP/2 push handlers in setup.push."""
 
+import asyncio
 from contextlib import contextmanager
 from datetime import timedelta
 import json
@@ -196,6 +197,21 @@ async def test_http2_connect_fires_relogin_on_login_error():
     assert result is None
     fired = [call.args[0] for call in hass.bus.async_fire.call_args_list]
     assert "alexa_media_relogin_required" in fired
+
+
+async def test_http2_connect_internal_cancelled_error_falls_back():
+    # alexapy leaks internal aiohttp CancelledErrors when the push channel dies
+    # mid-handshake; http2_connect must fall back to polling, not kill setup.
+    ctx, hass, login = _push_ctx({})
+    login.session.closed = False
+    with patch(_CLIENT) as client:
+        client.return_value.async_run = AsyncMock(
+            side_effect=asyncio.CancelledError("internal")
+        )
+        result = await http2_connect(ctx)
+    assert result is None
+    fired = [call.args[0] for call in hass.bus.async_fire.call_args_list]
+    assert "alexa_media_relogin_required" not in fired
 
 
 async def test_http2_connect_swallows_generic_error():

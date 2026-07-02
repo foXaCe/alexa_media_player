@@ -27,19 +27,21 @@ closures, which is what makes them testable in isolation.
 
 | Module | Responsibility |
 |--------|----------------|
-| `__init__.py` | Config-entry lifecycle only: `async_setup` / `async_setup_entry` (login bootstrap, cookie probe) / `async_unload_entry` / `async_remove_entry` / `async_migrate_entry`, plus the thin `setup_alexa` orchestrator that wires the `setup/` helpers together |
+| `__init__.py` | Config-entry lifecycle only: `async_setup` / `async_setup_entry` (login bootstrap, cookie probe, listeners registered via `entry.async_on_unload`) / `async_unload_entry` / `async_remove_entry`, plus the thin `setup_alexa` orchestrator that wires the `setup/` helpers together |
 | `setup/context.py` | `SetupContext` — the typed per-invocation state shared across the `setup/` helpers |
-| `setup/coordinator_data.py` | `async_update_data` — the `DataUpdateCoordinator` update method (devices/bluetooth/DND/notifications/entity-state fetch); raises `UpdateFailed` on transient cloud errors |
-| `setup/push.py` | `http2_connect` + the HTTP/2 push message/open/close/error handlers (bound to the context via `functools.partial`) |
+| `setup/coordinator_data.py` | `async_update_data` — the `DataUpdateCoordinator` update method, decomposed into named steps (`_build_fetch_plan` named-coroutine gather, `_run_network_discovery`, `_apply_device_updates`, `_prune_stale_devices`, `_persist_oauth`, …); raises `UpdateFailed` on transient cloud errors and `UpdateFailed(retry_after=…)` on Amazon 429 |
+| `setup/push.py` | `http2_connect` + the HTTP/2 push handlers; `http2_handler` routes each command through the `_PUSH_HANDLERS` dispatch table (`_handle_*` coroutines sharing a `_PushEvent`) |
 | `setup/last_called.py` | "last called" device tracking: voice-activity ↔ push-event correlation from customer-history records |
 | `setup/notifications.py` | Notification snapshot processing + debounced refresh worker |
 | `setup/dnd.py` | Do-Not-Disturb state sync with cooldown throttling |
 | `setup/bluetooth.py` | Bluetooth state sync on push events |
 | `coordinator.py` | `AlexaMediaCoordinator` — `DataUpdateCoordinator` subclass (debouncer, HTTP/2-aware interval) |
-| `runtime_data.py` | `AlexaRuntimeData` — typed per-`ConfigEntry` state |
+| `device_snapshot.py` | `DeviceSnapshotStore` — persisted device inventory enabling optimistic boot (entities recreated from the last snapshot before any Amazon round-trip; real refresh runs in the background) |
+| `runtime_data.py` | `AlexaRuntimeData` — typed per-`ConfigEntry` state, plus the `AlexaConfigEntry = ConfigEntry[AlexaRuntimeData]` alias |
 | `config_flow.py` | UI configuration, reauth and options flow |
 | `alexa_entity.py` | Parsing of raw Alexa entity payloads into typed data |
-| `const.py` | Domain, defaults, tuning constants, `TO_REDACT` |
+| `const.py` | Domain, defaults, tuning constants, bus event names, `TO_REDACT` |
+| `model_ids.py` | Static Amazon model-ID → human-readable name table (pure data) |
 | `helpers.py` | Shared utilities (`redact_sensitive`, login-error decorator, serial helpers, …) |
 | `services.py` | Custom services registration |
 

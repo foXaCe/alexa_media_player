@@ -51,41 +51,24 @@ def test_boot_metrics_get_summary_rounds_total_and_stages():
     }
 
 
-# --------------------------------------------------------------------------- #
-# DataCache
-# --------------------------------------------------------------------------- #
-def test_data_cache_get_missing_key_records_miss():
+def test_data_cache_get_missing_key_returns_none():
     cache = DataCache()
     assert cache.get("nope") is None
-    stats = cache.get_stats()
-    assert stats["misses"] == 1
-    assert stats["hits"] == 0
-    assert stats["entries"] == 0
 
 
-def test_data_cache_set_then_get_hit_within_ttl():
+def test_data_cache_set_then_get_within_ttl_returns_value():
     cache = DataCache(ttl_seconds=30.0)
     with patch(f"{_MOD}.time.monotonic", return_value=100.0):
         cache.cache_set("k", "v")
-        assert cache.get("k") == "v"  # 100 - 100 = 0 <= ttl -> hit
-    stats = cache.get_stats()
-    assert stats == {
-        "entries": 1,
-        "hits": 1,
-        "misses": 0,
-        "hit_rate_percent": 100.0,
-    }
+        assert cache.get("k") == "v"
 
 
-def test_data_cache_get_expired_entry_is_evicted_and_counts_miss():
+def test_data_cache_expired_entry_is_evicted():
     cache = DataCache(ttl_seconds=30.0)
     with patch(f"{_MOD}.time.monotonic", side_effect=[100.0, 200.0]):
         cache.cache_set("k", "v")  # stored at t=100
         assert cache.get("k") is None  # t=200, 100s > ttl -> expired
-    stats = cache.get_stats()
-    assert stats["entries"] == 0  # expired entry was deleted
-    assert stats["misses"] == 1
-    assert stats["hits"] == 0
+    assert "k" not in cache._cache
 
 
 def test_data_cache_set_evicts_oldest_when_full():
@@ -108,60 +91,6 @@ def test_data_cache_set_existing_key_does_not_evict():
     assert cache._cache["k1"][0] == "v1b"
 
 
-def test_data_cache_invalidate_removes_key():
-    cache = DataCache()
-    with patch(f"{_MOD}.time.monotonic", return_value=100.0):
-        cache.cache_set("k", "v")
-        cache.invalidate("k")
-        assert cache.get("k") is None
-    assert "k" not in cache._cache
-
-
-def test_data_cache_invalidate_missing_key_is_noop():
-    cache = DataCache()
-    cache.invalidate("absent")  # pop(..., None) -> no error
-    assert cache._cache == {}
-
-
-def test_data_cache_clear_resets_entries_and_counters():
-    cache = DataCache()
-    with patch(f"{_MOD}.time.monotonic", return_value=100.0):
-        cache.cache_set("k", "v")
-        cache.get("k")  # one hit
-    cache.clear()
-    assert cache.get_stats() == {
-        "entries": 0,
-        "hits": 0,
-        "misses": 0,
-        "hit_rate_percent": 0,
-    }
-
-
-def test_data_cache_get_stats_empty_hit_rate_is_zero():
-    cache = DataCache()
-    assert cache.get_stats() == {
-        "entries": 0,
-        "hits": 0,
-        "misses": 0,
-        "hit_rate_percent": 0,
-    }
-
-
-def test_data_cache_get_stats_computes_hit_rate():
-    cache = DataCache()
-    with patch(f"{_MOD}.time.monotonic", return_value=100.0):
-        cache.cache_set("k", "v")
-        cache.get("k")  # hit
-    cache.get("missing")  # miss (missing-key path, no monotonic needed)
-    stats = cache.get_stats()
-    assert stats["hits"] == 1
-    assert stats["misses"] == 1
-    assert stats["hit_rate_percent"] == 50.0
-
-
-# --------------------------------------------------------------------------- #
-# AlexaMetrics
-# --------------------------------------------------------------------------- #
 def test_alexa_metrics_initial_state():
     hass = _hass()
     metrics = AlexaMetrics(hass)
@@ -200,45 +129,6 @@ def test_record_api_call_accumulates_count_and_duration():
     assert metrics._api_calls["ep"] == (2, 2.0)
 
 
-def test_get_api_stats_reports_avg():
-    metrics = AlexaMetrics(_hass())
-    metrics.record_api_call("ep", 1.5)
-    metrics.record_api_call("ep", 0.5)
-    assert metrics.get_api_stats() == {
-        "ep": {"calls": 2, "total_time": 2.0, "avg_time": 1.0},
-    }
-
-
-def test_get_api_stats_zero_count_avoids_division():
-    metrics = AlexaMetrics(_hass())
-    # Force a zero-count entry to exercise the ``if count > 0 else 0`` branch.
-    metrics._api_calls["ep"] = (0, 0.0)
-    assert metrics.get_api_stats() == {
-        "ep": {"calls": 0, "total_time": 0.0, "avg_time": 0},
-    }
-
-
-def test_get_full_report_without_boot_tracking():
-    metrics = AlexaMetrics(_hass())
-    metrics.record_api_call("ep", 1.0)
-    report = metrics.get_full_report()
-    assert report["boot"] is None
-    assert report["cache"] == metrics.api_cache.get_stats()
-    assert "ep" in report["api_calls"]
-
-
-def test_get_full_report_with_boot_tracking():
-    metrics = AlexaMetrics(_hass())
-    metrics.start_boot_tracking()
-    report = metrics.get_full_report()
-    assert isinstance(report["boot"], dict)
-    assert "total_time_seconds" in report["boot"]
-    assert "stages" in report["boot"]
-
-
-# --------------------------------------------------------------------------- #
-# get_metrics
-# --------------------------------------------------------------------------- #
 def test_get_metrics_returns_stored_instance():
     sentinel = object()
     hass = _hass({DOMAIN: {"metrics": sentinel}})

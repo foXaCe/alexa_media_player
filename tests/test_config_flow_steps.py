@@ -464,7 +464,7 @@ def _make_options_flow(entry_data=None):
     entry = MagicMock()
     entry.data = entry_data or {}
     entry.options = {}
-    flow = OptionsFlowHandler(entry)
+    flow = OptionsFlowHandler()
     flow.hass = MagicMock()
     # _config_entry_id is a property returning self.handler; config_entry resolves
     # via hass.config_entries.async_get_known_entry(self._config_entry_id).

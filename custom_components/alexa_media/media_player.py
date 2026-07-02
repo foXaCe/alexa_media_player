@@ -10,6 +10,7 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -19,7 +20,7 @@ import urllib.request
 
 from homeassistant import util
 from homeassistant.components import media_source
-from homeassistant.components.media_player import MediaPlayerEntity as MediaPlayerDevice
+from homeassistant.components.media_player import MediaPlayerEntity
 from homeassistant.components.media_player.browse_media import (
     async_process_play_media_url,
 )
@@ -56,7 +57,6 @@ from .const import (
     DEPENDENT_ALEXA_COMPONENTS,
     MIN_TIME_BETWEEN_FORCED_SCANS,
     MIN_TIME_BETWEEN_SCANS,
-    MODEL_IDS,
     PLAY_SCAN_INTERVAL,
     PUBLIC_URL_ERROR_MESSAGE,
     STREAMING_ERROR_MESSAGE,
@@ -64,6 +64,7 @@ from .const import (
 )
 from .exceptions import TimeoutException
 from .helpers import _catch_login_errors, add_devices, is_http2_enabled, safe_get
+from .model_ids import MODEL_IDS
 
 SUPPORT_ALEXA = (
     MediaPlayerEntityFeature.PAUSE
@@ -125,11 +126,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
     await create_www_directory(hass)
 
     devices = []  # type: List[AlexaClient]
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
@@ -224,18 +221,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     raise ConfigEntryNotReady
 
 
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    _LOGGER.debug("%s: Attempting to unload media players", hide_email(account))
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    for device in account_dict["entities"]["media_player"].values():
-        _LOGGER.debug("%s: Removing %s", hide_email(account), device)
-        await device.async_remove()
-    return True
-
-
-class AlexaClient(MediaPlayerDevice, AlexaMedia):
+class AlexaClient(MediaPlayerEntity, AlexaMedia):
     """Representation of a Alexa device."""
 
     _attr_has_entity_name = True
@@ -322,27 +308,11 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
             f"{ALEXA_DOMAIN}_{hide_email(self._login.email)}"[0:32],
             self._handle_event,
         )
-        # Register to coordinator:
-        email = self._login.email
-        coordinator = self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
-            "coordinator"
-        )
-        if coordinator:
-            coordinator.async_add_listener(self.update)
 
     async def async_will_remove_from_hass(self):
         """Prepare to remove entity."""
         # Register event handler on bus
         self._listener()
-        email = self._login.email
-        coordinator = self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
-            "coordinator"
-        )
-        if coordinator:
-            try:
-                coordinator.async_remove_listener(self.update)
-            except AttributeError:
-                pass  # ignore missing listener
 
     async def _handle_event(self, event):
         # pylint: disable=too-many-branches,too-many-statements
@@ -1176,11 +1146,6 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         return self._assumed_state
 
     @property
-    def hidden(self):
-        """Return whether the sensor should be hidden."""
-        return "MUSIC_SKILL" not in self._capabilities
-
-    @property
     def unique_id(self):
         """Return the id of this Alexa client."""
         email = self._login.email
@@ -1232,11 +1197,6 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         if self._media_player_state == "IDLE":
             return MediaPlayerState.IDLE
         return MediaPlayerState.IDLE
-
-    def update(self):
-        """Get the latest details on a media player synchronously."""
-        return
-        # return self.hass.add_job(async_update)
 
     @_catch_login_errors
     async def async_update(self):
@@ -1805,14 +1765,23 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                     "0",
                     output_file_path,
                 ]
-                if subprocess.run(command, check=True).returncode != 0:
+                try:
+                    # ffmpeg is CPU/IO bound: run it in the executor so the
+                    # event loop is never blocked (quality-scale: no blocking
+                    # calls in coroutines).
+                    await self.hass.async_add_executor_job(
+                        functools.partial(subprocess.run, command, check=True)
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError) as err:
                     _LOGGER.error(
-                        "%s: %s:ffmpeg command FAILED converting %s to %s",
+                        "%s: %s:ffmpeg command FAILED converting %s to %s: %s",
                         hide_email(self._login.email),
                         self,
                         input_file_path,
                         output_file_path,
+                        err,
                     )
+                    return
 
             _LOGGER.debug(
                 "%s: %s:Playing %slocal/alexa_tts%s",

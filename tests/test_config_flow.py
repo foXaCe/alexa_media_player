@@ -14,7 +14,6 @@ from yarl import URL
 from custom_components.alexa_media.config_flow import (
     AlexaMediaAuthorizationProxyView,
     AlexaMediaFlowHandler,
-    OptionsFlowHandler,
 )
 from custom_components.alexa_media.const import (
     CONF_DEBUG,
@@ -663,18 +662,6 @@ def test_save_user_input_exclude_devices_plain_string():
     flow = _make_flow()
     flow._save_user_input_to_config({CONF_EXCLUDE_DEVICES: "Echo Living Room"})
     assert flow.config[CONF_EXCLUDE_DEVICES] == "Echo Living Room"
-
-
-def test_options_flow_legacy_ha_assigns_config_entry():
-    """On HA < 2024.12 the flow assigns config_entry directly.
-
-    On the installed (modern) HA, config_entry is a read-only property, so the
-    legacy assignment raises AttributeError -- which still executes the guarded
-    line for coverage of the version-compat branch.
-    """
-    with patch("custom_components.alexa_media.config_flow.HAVERSION", "2024.11.0"):
-        with pytest.raises(AttributeError):
-            OptionsFlowHandler(MagicMock())
 
 
 # --------------------------------------------------------------------------- #

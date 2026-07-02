@@ -13,7 +13,11 @@ from asyncio import sleep
 import logging
 
 from alexapy import hide_email, hide_serial
-from homeassistant.components.alarm_control_panel import AlarmControlPanelEntity
+from homeassistant.components.alarm_control_panel import (
+    AlarmControlPanelEntity,
+    AlarmControlPanelEntityFeature,
+    AlarmControlPanelState,
+)
 from homeassistant.const import CONF_EMAIL, STATE_UNAVAILABLE
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -31,20 +35,13 @@ from .const import (
 )
 from .helpers import _catch_login_errors, add_devices, safe_get
 
-try:
-    from homeassistant.components.alarm_control_panel import AlarmControlPanelState
-
-    STATE_ALARM_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
-    STATE_ALARM_DISARMED = AlarmControlPanelState.DISARMED
-except ImportError:
-    from homeassistant.const import STATE_ALARM_ARMED_AWAY, STATE_ALARM_DISARMED
+STATE_ALARM_ARMED_AWAY = AlarmControlPanelState.ARMED_AWAY
+STATE_ALARM_DISARMED = AlarmControlPanelState.DISARMED
 _LOGGER = logging.getLogger(__name__)
 
 # Entities are refreshed through the shared coordinator/dispatcher rather than
 # per-entity polling, so updates can run unbounded in parallel.
 PARALLEL_UPDATES = 0
-
-DEPENDENCIES = [ALEXA_DOMAIN]
 
 
 async def async_setup_platform(
@@ -52,11 +49,7 @@ async def async_setup_platform(
 ) -> bool:
     """Set up the Alexa alarm control panel platform."""
     devices: list[AlexaAlarmControlPanel] = []
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     include_filter = config.get(CONF_INCLUDE_DEVICES, [])
@@ -125,17 +118,6 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     )
 
 
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    _LOGGER.debug("Attempting to unload alarm control panel")
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    for device in account_dict["entities"]["alarm_control_panel"].values():
-        _LOGGER.debug("Removing %s", device)
-        await device.async_remove()
-    return True
-
-
 class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEntity):
     """Implementation of Alexa Media Player alarm control panel."""
 
@@ -152,8 +134,7 @@ class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEnt
         self._appliance_id = guard_entity["appliance_id"]
         self._guard_entity_id = guard_entity["id"]
         self._friendly_name = "Alexa Guard " + self._appliance_id[-5:]
-        self._media_players = {} or media_players
-        self._attrs: dict[str, str] = {}
+        self._media_players = media_players if media_players is not None else {}
         _LOGGER.debug(
             "%s: Guard Discovered %s: %s %s",
             self.account,
@@ -242,25 +223,18 @@ class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEnt
         return None
 
     @property
-    def state(self):
+    def alarm_state(self) -> AlarmControlPanelState:
         """Return the state of the device."""
         _state = parse_guard_state_from_coordinator(
             self.coordinator, self._guard_entity_id
         )
         if _state == "ARMED_AWAY":
-            return STATE_ALARM_ARMED_AWAY
-        return STATE_ALARM_DISARMED
+            return AlarmControlPanelState.ARMED_AWAY
+        return AlarmControlPanelState.DISARMED
 
     @property
-    def supported_features(self) -> int:
+    def supported_features(self) -> AlarmControlPanelEntityFeature:
         """Return the list of supported features."""
-        # pylint: disable=import-outside-toplevel
-        try:
-            from homeassistant.components.alarm_control_panel import (
-                AlarmControlPanelEntityFeature,
-            )
-        except ImportError:
-            return 0
         return AlarmControlPanelEntityFeature.ARM_AWAY
 
     @property
@@ -275,8 +249,3 @@ class AlexaAlarmControlPanel(AlarmControlPanelEntity, AlexaMedia, CoordinatorEnt
             self.coordinator.data and self._guard_entity_id in self.coordinator.data
         )
         return not last_refresh_success
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        return self._attrs

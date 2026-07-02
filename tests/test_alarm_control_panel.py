@@ -407,12 +407,6 @@ class TestAlarmControlPanelProperties:
         panel.coordinator.data = {"guard_entity_abc": {"state": "ARMED_AWAY"}}
         assert panel.assumed_state is False
 
-    def test_extra_state_attributes_returns_attrs(self):
-        """Test extra_state_attributes returns the _attrs dict."""
-        panel = self._create_panel()
-        panel._attrs = {"custom_attr": "value"}
-        assert panel.extra_state_attributes == {"custom_attr": "value"}
-
 
 class TestAlarmArmDisarm:
     """Test async_alarm_arm_away and async_alarm_disarm methods."""
@@ -725,46 +719,6 @@ class TestAsyncSetupEntry:
             mock_setup.assert_called_once_with(
                 hass, config_entry.data, async_add_devices, discovery_info=None
             )
-
-
-class TestAsyncUnloadEntry:
-    """Test the async_unload_entry function."""
-
-    @pytest.mark.asyncio
-    async def test_unload_entry_removes_devices(self):
-        """Test that unload_entry removes all alarm panel devices."""
-        from custom_components.alexa_media.alarm_control_panel import async_unload_entry
-        from custom_components.alexa_media.const import DATA_ALEXAMEDIA
-
-        hass = MagicMock()
-        entry = MagicMock()
-        account = "test@example.com"
-        entry.data = {"email": account}
-
-        mock_device1 = MagicMock()
-        mock_device1.async_remove = AsyncMock()
-        mock_device2 = MagicMock()
-        mock_device2.async_remove = AsyncMock()
-
-        hass.data = {
-            DATA_ALEXAMEDIA: {
-                "accounts": {
-                    account: {
-                        "entities": {
-                            "alarm_control_panel": {
-                                "device1": mock_device1,
-                                "device2": mock_device2,
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        result = await async_unload_entry(hass, entry)
-        assert result is True
-        mock_device1.async_remove.assert_called_once()
-        mock_device2.async_remove.assert_called_once()
 
 
 class TestSupportedFeatures:

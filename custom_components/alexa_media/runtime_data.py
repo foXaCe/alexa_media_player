@@ -182,3 +182,6 @@ class AlexaRuntimeData:
     def add_listener(self, unsub: Callable) -> None:
         """Add a listener for cleanup."""
         self.listeners.append(unsub)
+
+
+type AlexaConfigEntry = ConfigEntry[AlexaRuntimeData]

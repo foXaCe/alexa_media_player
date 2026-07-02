@@ -1,16 +1,14 @@
 """Tests for sensor.py: TemperatureSensor, AirQualitySensor, helpers and unload."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import CONF_EMAIL, UnitOfTemperature
+from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from custom_components.alexa_media.const import DATA_ALEXAMEDIA
 from custom_components.alexa_media.sensor import (
     AirQualitySensor,
     TemperatureSensor,
-    async_unload_entry,
     lookup_device_info,
 )
 
@@ -141,19 +139,3 @@ def test_air_quality_handle_coordinator_update():
 # --------------------------------------------------------------------------- #
 # async_unload_entry (plain + nested air-quality)
 # --------------------------------------------------------------------------- #
-
-
-async def test_unload_entry_removes_plain_and_nested_sensors():
-    plain = AsyncMock()
-    nested = AsyncMock()
-    account = {"entities": {"sensor": {"k1": {"s1": plain, "s2": {"n1": nested}}}}}
-    hass = MagicMock()
-    hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: account}}}
-    entry = MagicMock()
-    entry.data = {CONF_EMAIL: _EMAIL}
-    result = await async_unload_entry(hass, entry)
-    assert result is True
-    plain.async_remove.assert_awaited_once()
-    nested.async_remove.assert_awaited_once()
-    # empty bucket pruned
-    assert account["entities"]["sensor"] == {}

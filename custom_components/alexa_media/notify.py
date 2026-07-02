@@ -140,6 +140,9 @@ class AlexaNotificationService(BaseNotificationService):
                         converted = alexa.name
                     elif type_ == "entity_ids":
                         converted = alexa.entity_id
+                    else:
+                        _LOGGER.warning("Unknown convert type: %s", type_)
+                        continue
                     devices.append(converted)
                     matched = True
                     # _LOGGER.debug("Converting: %s to (%s): %s", item, type_, converted)

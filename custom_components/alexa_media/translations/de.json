@@ -184,5 +184,25 @@
       },
       "name": "Aktualisiere den zuletzt aufgerufenen Sensor"
     }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "Die Entität {entity_id} wurde nicht im Entitätenregister gefunden."
+    },
+    "entity_not_alexa_media": {
+      "message": "Die Entität {entity_id} ist keine Alexa-Media-Player-Entität."
+    },
+    "entity_no_state": {
+      "message": "Für die Entität {entity_id} ist kein Zustand verfügbar."
+    },
+    "no_previous_volume": {
+      "message": "Für {entity_id} ist keine vorherige oder aktuelle Lautstärke verfügbar."
+    },
+    "invalid_entries": {
+      "message": "Die Anzahl der Einträge {entries} ist ungültig; sie muss eine positive Ganzzahl sein."
+    },
+    "no_matching_accounts": {
+      "message": "Kein Alexa-Media-Konto entspricht den angeforderten E-Mail-Adressen: {emails}."
+    }
   }
 }

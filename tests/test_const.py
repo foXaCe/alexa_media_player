@@ -16,7 +16,6 @@ from custom_components.alexa_media.const import (
     DATA_ALEXAMEDIA,
     DEPENDENT_ALEXA_COMPONENTS,
     DOMAIN,
-    HTTP_COOKIE_HEADER,
     ISSUE_URL,
     MIN_TIME_BETWEEN_FORCED_SCANS,
     MIN_TIME_BETWEEN_SCANS,
@@ -105,10 +104,6 @@ class TestConstants:
         dependent_set = set(DEPENDENT_ALEXA_COMPONENTS)
         assert main_set.isdisjoint(dependent_set)
 
-    def test_http_cookie_header_format(self):
-        """Test that HTTP_COOKIE_HEADER is correct."""
-        assert HTTP_COOKIE_HEADER == "# HTTP Cookie File"
-
     def test_configuration_constants_are_strings(self):
         """Test that configuration constants are strings."""
         config_constants = [
@@ -149,7 +144,6 @@ class TestConstants:
             MIN_TIME_BETWEEN_FORCED_SCANS,
             ALEXA_COMPONENTS,
             DEPENDENT_ALEXA_COMPONENTS,
-            HTTP_COOKIE_HEADER,
             CONF_ACCOUNTS,
             CONF_DEBUG,
             CONF_HASS_URL,

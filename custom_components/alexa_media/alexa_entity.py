@@ -571,7 +571,13 @@ async def get_entity_data(
                     entities[entity_id] = []
                     cap_states = device_state.get("capabilityStates", [])
                     for cap_state in cap_states:
-                        entities[entity_id].append(json.loads(cap_state))
+                        try:
+                            entities[entity_id].append(json.loads(cap_state))
+                        except (json.JSONDecodeError, TypeError):
+                            _LOGGER.debug(
+                                "Skipping malformed capability state for %s",
+                                entity_id,
+                            )
     return entities
 
 

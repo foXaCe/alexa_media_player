@@ -122,11 +122,6 @@ class AlexaMediaServices:
                 schema=service_def.schema,
             )
 
-    async def unregister(self) -> None:
-        """Unregister Alexa Media custom services."""
-        for service_def in SERVICE_DEFS:
-            self.hass.services.async_remove(DOMAIN, service_def.name)
-
     async def force_logout(self, call: ServiceCall) -> bool:
         """Handle force logout service request.
 
