@@ -32,6 +32,7 @@ from ..const import (
     CONF_OAUTH,
     DATA_ALEXAMEDIA,
     DOMAIN,
+    EVENT_RELOGIN_REQUIRED,
     HTTP2_ERROR_THRESHOLD,
     LAST_PING_MAX_AGE_SECONDS,
     LAST_PUSH_INACTIVITY_SECONDS,
@@ -420,7 +421,7 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
         )
         if login_obj.status:
             hass.bus.async_fire(
-                "alexa_media_relogin_required",
+                EVENT_RELOGIN_REQUIRED,
                 event_data={"email": hide_email(email), "url": login_obj.url},
             )
         return None

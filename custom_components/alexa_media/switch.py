@@ -14,6 +14,11 @@ import datetime
 import logging
 
 from alexapy import AlexaAPI
+from homeassistant.components.switch import (
+    SwitchDeviceClass,
+    SwitchEntity,
+    SwitchEntityDescription,
+)
 from homeassistant.exceptions import ConfigEntryNotReady, NoEntitySpecifiedError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
@@ -32,13 +37,6 @@ from .alexa_entity import parse_power_from_coordinator
 from .alexa_media import AlexaMedia
 from .const import CONF_EXTENDED_ENTITY_DISCOVERY
 from .helpers import _catch_login_errors, add_devices, safe_get
-
-try:
-    from homeassistant.components.switch import SwitchEntity as SwitchDevice
-except ImportError:
-    from homeassistant.components.switch import SwitchDevice
-
-from homeassistant.components.switch import SwitchEntityDescription
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,11 +88,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
         ("shuffle", ShuffleSwitch),
         ("repeat", RepeatSwitch),
     ]
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     include_filter = config.get(CONF_INCLUDE_DEVICES, [])
@@ -201,19 +195,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     )
 
 
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    _LOGGER.debug("Attempting to unload switch")
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    for key, switches in account_dict["entities"]["switch"].items():
-        for device in switches[key].values():
-            _LOGGER.debug("Removing %s", device)
-            await device.async_remove()
-    return True
-
-
-class AlexaMediaSwitch(SwitchDevice, AlexaMedia):
+class AlexaMediaSwitch(SwitchEntity, AlexaMedia):
     """Representation of a Alexa Media switch."""
 
     _attr_has_entity_name = True
@@ -330,12 +312,7 @@ class AlexaMediaSwitch(SwitchDevice, AlexaMedia):
     @property
     def device_class(self):
         """Return the device_class of the switch."""
-        return "switch"
-
-    @property
-    def hidden(self):
-        """Return whether the switch should be hidden from the UI."""
-        return not self.available
+        return SwitchDeviceClass.SWITCH
 
     @property
     def should_poll(self):
@@ -436,7 +413,7 @@ class RepeatSwitch(AlexaMediaSwitch):
         super().__init__(client, "repeat_state", "repeat", "repeat")
 
 
-class SmartSwitch(CoordinatorEntity, SwitchDevice):
+class SmartSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator, login, details):
         """Initialize alexa light entity."""
         super().__init__(coordinator)

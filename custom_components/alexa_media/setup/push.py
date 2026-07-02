@@ -23,6 +23,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from ..const import (
     DATA_ALEXAMEDIA,
     DOMAIN,
+    EVENT_RELOGIN_REQUIRED,
     ISSUE_URL,
     LAST_CALLED_COALESCE_WINDOW_MS,
 )
@@ -75,7 +76,7 @@ async def http2_connect(ctx: SetupContext) -> HTTP2EchoClient:
             exception_,
         )
         hass.bus.async_fire(
-            "alexa_media_relogin_required",
+            EVENT_RELOGIN_REQUIRED,
             event_data={"email": hide_email(email), "url": login_obj.url},
         )
         return
@@ -626,7 +627,7 @@ async def http2_error_handler(ctx: SetupContext, message):
         hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] = 5
         _LOGGER.debug("%s: Login error detected.", hide_email(email))
         hass.bus.async_fire(
-            "alexa_media_relogin_required",
+            EVENT_RELOGIN_REQUIRED,
             event_data={"email": hide_email(email), "url": login_obj.url},
         )
         return

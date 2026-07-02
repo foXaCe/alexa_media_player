@@ -68,6 +68,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEPENDENT_ALEXA_COMPONENTS,
     DOMAIN,
+    EVENT_RELOGIN_REQUIRED,
+    EVENT_RELOGIN_SUCCESS,
     ISSUE_URL,
     SCAN_INTERVAL,
     STARTUP_MESSAGE,
@@ -382,11 +384,9 @@ async def async_setup_entry(
         # dict is gone.
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, close_alexa_media)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, complete_startup)
+    config_entry.async_on_unload(hass.bus.async_listen(EVENT_RELOGIN_REQUIRED, relogin))
     config_entry.async_on_unload(
-        hass.bus.async_listen("alexa_media_relogin_required", relogin)
-    )
-    config_entry.async_on_unload(
-        hass.bus.async_listen("alexa_media_relogin_success", login_success)
+        hass.bus.async_listen(EVENT_RELOGIN_SUCCESS, login_success)
     )
     try:
         _t = time.monotonic()

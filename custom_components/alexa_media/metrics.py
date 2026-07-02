@@ -59,8 +59,6 @@ class DataCache:
         self._cache: dict[str, tuple[Any, float]] = {}
         self._ttl = ttl_seconds
         self._max_entries = max_entries
-        self._hits = 0
-        self._misses = 0
 
     def get(self, key: str) -> Any | None:
         """Get value from cache if not expired.
@@ -72,17 +70,14 @@ class DataCache:
             Cached value or None if expired/missing
         """
         if key not in self._cache:
-            self._misses += 1
             return None
 
         value, timestamp = self._cache[key]
         if time.monotonic() - timestamp > self._ttl:
             # Expired
             del self._cache[key]
-            self._misses += 1
             return None
 
-        self._hits += 1
         return value
 
     def cache_set(self, key: str, value: Any) -> None:
@@ -101,27 +96,6 @@ class DataCache:
             oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
             del self._cache[oldest_key]
         self._cache[key] = (value, time.monotonic())
-
-    def invalidate(self, key: str) -> None:
-        """Remove key from cache."""
-        self._cache.pop(key, None)
-
-    def clear(self) -> None:
-        """Clear all cached entries."""
-        self._cache.clear()
-        self._hits = 0
-        self._misses = 0
-
-    def get_stats(self) -> dict[str, int]:
-        """Get cache statistics."""
-        total = self._hits + self._misses
-        hit_rate = (self._hits / total * 100) if total > 0 else 0
-        return {
-            "entries": len(self._cache),
-            "hits": self._hits,
-            "misses": self._misses,
-            "hit_rate_percent": round(hit_rate, 1),
-        }
 
 
 class AlexaMetrics:
@@ -156,25 +130,6 @@ class AlexaMetrics:
 
         count, total = self._api_calls[endpoint]
         self._api_calls[endpoint] = (count + 1, total + duration)
-
-    def get_api_stats(self) -> dict[str, Any]:
-        """Get API call statistics."""
-        stats = {}
-        for endpoint, (count, total) in self._api_calls.items():
-            stats[endpoint] = {
-                "calls": count,
-                "total_time": round(total, 3),
-                "avg_time": round(total / count, 3) if count > 0 else 0,
-            }
-        return stats
-
-    def get_full_report(self) -> dict[str, Any]:
-        """Get complete metrics report."""
-        return {
-            "boot": self.boot_metrics.get_summary() if self.boot_metrics else None,
-            "cache": self.api_cache.get_stats(),
-            "api_calls": self.get_api_stats(),
-        }
 
 
 def get_metrics(hass: HomeAssistant) -> AlexaMetrics | None:

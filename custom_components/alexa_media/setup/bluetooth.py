@@ -31,9 +31,12 @@ async def update_bluetooth_state(
     hass = ctx.hass
     email = ctx.email
     bluetooth = await AlexaAPI.get_bluetooth(login_obj)
-    device = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"]["media_player"][
-        device_serial
-    ]
+    device = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
+        "media_player"
+    ].get(device_serial)
+    if device is None:
+        # Push event raced ahead of device discovery; skip until next refresh.
+        return
 
     if bluetooth is not None and "bluetoothStates" in bluetooth:
         for b_state in bluetooth["bluetoothStates"]:

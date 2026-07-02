@@ -19,7 +19,7 @@ import urllib.request
 
 from homeassistant import util
 from homeassistant.components import media_source
-from homeassistant.components.media_player import MediaPlayerEntity as MediaPlayerDevice
+from homeassistant.components.media_player import MediaPlayerEntity
 from homeassistant.components.media_player.browse_media import (
     async_process_play_media_url,
 )
@@ -125,11 +125,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
     await create_www_directory(hass)
 
     devices = []  # type: List[AlexaClient]
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
@@ -224,18 +220,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     raise ConfigEntryNotReady
 
 
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    _LOGGER.debug("%s: Attempting to unload media players", hide_email(account))
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    for device in account_dict["entities"]["media_player"].values():
-        _LOGGER.debug("%s: Removing %s", hide_email(account), device)
-        await device.async_remove()
-    return True
-
-
-class AlexaClient(MediaPlayerDevice, AlexaMedia):
+class AlexaClient(MediaPlayerEntity, AlexaMedia):
     """Representation of a Alexa device."""
 
     _attr_has_entity_name = True
@@ -1174,11 +1159,6 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
     def assumed_state(self):
         """Return whether the state is an assumed_state."""
         return self._assumed_state
-
-    @property
-    def hidden(self):
-        """Return whether the sensor should be hidden."""
-        return "MUSIC_SKILL" not in self._capabilities
 
     @property
     def unique_id(self):

@@ -450,19 +450,6 @@ async def test_setup_platform_without_account_raises():
 
 
 @patch(_ADD, new_callable=AsyncMock)
-async def test_setup_platform_account_from_discovery_info(mock_add):
-    mock_add.return_value = True
-    account = "a@example.com"
-    account_dict = _setup_account_dict()
-    hass = _hass_with(account, account_dict)
-    # Empty config -> account resolved from discovery_info
-    result = await async_setup_platform(
-        hass, {}, MagicMock(), discovery_info={"config": {CONF_EMAIL: account}}
-    )
-    assert result is True
-
-
-@patch(_ADD, new_callable=AsyncMock)
 async def test_setup_platform_builds_temperature_and_air_quality(mock_add):
     mock_add.return_value = True
     account = "a@example.com"
@@ -666,17 +653,6 @@ def test_should_poll_reflects_http2():
         assert s.should_poll is False
     with patch(_HTTP2, return_value=False):
         assert s.should_poll is True
-
-
-def test_hidden_reflects_state():
-    s = _alarm()
-    with patch.object(
-        AlexaMediaNotificationSensor, "state", new_callable=PropertyMock
-    ) as state:
-        state.return_value = None
-        assert s.hidden is True
-        state.return_value = "2024-01-01T00:00:00+00:00"
-        assert s.hidden is False
 
 
 def test_recurrence_property():

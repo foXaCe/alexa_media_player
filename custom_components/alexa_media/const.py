@@ -41,7 +41,6 @@ DEPENDENT_ALEXA_COMPONENTS = [
     "binary_sensor",
 ]
 
-HTTP_COOKIE_HEADER = "# HTTP Cookie File"
 CONF_ACCOUNTS = "accounts"
 CONF_DEBUG = "debug"
 CONF_HASS_URL = "hass_url"
@@ -52,13 +51,16 @@ CONF_PUBLIC_URL = "public_url"
 CONF_EXTENDED_ENTITY_DISCOVERY = "extended_entity_discovery"
 CONF_SECURITYCODE = "securitycode"
 CONF_OTPSECRET = "otp_secret"
-CONF_PROXY = "proxy"
 CONF_PROXY_WARNING = "proxy_warning"
 CONF_SCAN_INTERVAL = (
     "scan_interval"  # local definition; HA's CONF_SCAN_INTERVAL is deprecated
 )
 CONF_TOTP_REGISTER = "registered"
 CONF_OAUTH = "oauth"
+
+# Bus events fired when the Amazon session needs / regains authentication.
+EVENT_RELOGIN_REQUIRED = "alexa_media_relogin_required"
+EVENT_RELOGIN_SUCCESS = "alexa_media_relogin_success"
 
 EXCEPTION_TEMPLATE = "An exception of type {0} occurred. Arguments:\n{1!r}"
 
@@ -157,7 +159,6 @@ RECURRING_PATTERN_ISO_SET = {
     "XXXX-WXX-7": {7},
 }
 
-ATTR_MESSAGE = "message"
 ATTR_EMAIL = "email"
 ATTR_ENTITY_ID = "entity_id"
 ATTR_NUM_ENTRIES = "entries"

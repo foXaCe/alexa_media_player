@@ -73,11 +73,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
         "Timer": TimerSensor,
         "Reminder": ReminderSensor,
     }
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     include_filter = config.get(CONF_INCLUDE_DEVICES, [])
@@ -111,7 +107,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
                         account,
                         debug=debug,
                     )
-                elif n_type in ("Reminder") and "REMINDERS" in device["capabilities"]:
+                elif n_type in ("Reminder",) and "REMINDERS" in device["capabilities"]:
                     alexa_client = class_(
                         account_dict["entities"]["media_player"][key],
                         n_type_dict,
@@ -167,33 +163,6 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     return await async_setup_platform(
         hass, config_entry.data, async_add_devices, discovery_info=None
     )
-
-
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    _LOGGER.debug("Attempting to unload sensors")
-
-    for key, sensors in list(account_dict["entities"]["sensor"].items()):
-        for sensor_key, device in list(sensors.items()):
-            if isinstance(device, dict):
-                # Air_Quality stores sensors in a nested dict
-                for nested_key, nested_sensor in list(device.items()):
-                    _LOGGER.debug("Removing %s", nested_sensor)
-                    await nested_sensor.async_remove()
-                    device.pop(nested_key, None)
-                sensors.pop(sensor_key, None)
-                continue
-
-            _LOGGER.debug("Removing %s", device)
-            await device.async_remove()
-            sensors.pop(sensor_key, None)
-
-        if not sensors:
-            account_dict["entities"]["sensor"].pop(key, None)
-
-    return True
 
 
 async def create_temperature_sensors(
@@ -1009,11 +978,6 @@ class AlexaMediaNotificationSensor(SensorEntity):
             ):
                 _LOGGER.debug("Updating sensor %s from push_activity", self)
                 self.schedule_update_ha_state(True)
-
-    @property
-    def hidden(self):
-        """Return whether the sensor should be hidden."""
-        return self.state is None
 
     @property
     def should_poll(self):

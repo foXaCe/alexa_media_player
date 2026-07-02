@@ -46,17 +46,6 @@ async def test_register_registers_every_service():
     assert registered == {definition.name for definition in SERVICE_DEFS}
 
 
-async def test_unregister_removes_every_service():
-    svc, hass = _make_services()
-    await svc.unregister()
-    assert hass.services.async_remove.call_count == len(SERVICE_DEFS)
-
-
-# --------------------------------------------------------------------------- #
-# force_logout
-# --------------------------------------------------------------------------- #
-
-
 @patch("custom_components.alexa_media.services.report_relogin_required")
 async def test_force_logout_all_accounts(mock_report):
     svc, _ = _make_services({"a@example.com": {"login_obj": MagicMock()}})

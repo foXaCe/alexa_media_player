@@ -83,6 +83,7 @@ from .const import (
     DEFAULT_QUEUE_DELAY,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_RELOGIN_SUCCESS,
     ISSUE_URL,
     REAUTH_MAX_AUTO_ATTEMPTS,
     REAUTH_RAPID_RELOGIN_WINDOW_S,
@@ -727,7 +728,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 )
                 _LOGGER.debug("Reauth successful for %s", hide_email(email))
                 self.hass.bus.async_fire(
-                    "alexa_media_relogin_success",
+                    EVENT_RELOGIN_SUCCESS,
                     event_data={"email": hide_email(email), "url": login.url},
                 )
                 host = urlparse(login.url).hostname or login.url

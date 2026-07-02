@@ -41,11 +41,7 @@ PARALLEL_UPDATES = 0
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
     """Set up the Alexa sensor platform."""
     devices: list[BinarySensorEntity] = []
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
@@ -74,20 +70,10 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
 
 
 async def async_setup_entry(hass, config_entry, async_add_devices):
-    """Set up the Alexa sensor platform by config_entry."""
+    """Set up the Alexa binary sensor platform by config_entry."""
     return await async_setup_platform(
         hass, config_entry.data, async_add_devices, discovery_info=None
     )
-
-
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    _LOGGER.debug("Attempting to unload binary sensors")
-    for binary_sensor in account_dict["entities"]["binary_sensor"]:
-        await binary_sensor.async_remove()
-    return True
 
 
 class AlexaContact(CoordinatorEntity, BinarySensorEntity):

@@ -53,17 +53,11 @@ _LOGGER = logging.getLogger(__name__)
 # per-entity polling, so updates can run unbounded in parallel.
 PARALLEL_UPDATES = 0
 
-LOCAL_TIMEZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
-
 
 async def async_setup_platform(hass, config, add_devices_callback, discovery_info=None):
-    """Set up the Alexa sensor platform."""
+    """Set up the Alexa light platform."""
     devices: list[LightEntity] = []
-    account = None
-    if config:
-        account = config.get(CONF_EMAIL)
-    if account is None and discovery_info:
-        account = safe_get(discovery_info, ["config", CONF_EMAIL])
+    account = config.get(CONF_EMAIL) if config else None
     if account is None:
         raise ConfigEntryNotReady
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
@@ -101,20 +95,10 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
 
 
 async def async_setup_entry(hass, config_entry, async_add_devices):
-    """Set up the Alexa sensor platform by config_entry."""
+    """Set up the Alexa light platform by config_entry."""
     return await async_setup_platform(
         hass, config_entry.data, async_add_devices, discovery_info=None
     )
-
-
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry."""
-    account = entry.data[CONF_EMAIL]
-    account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
-    _LOGGER.debug("Attempting to unload lights")
-    for light in account_dict["entities"]["light"]:
-        await light.async_remove()
-    return True
 
 
 def color_modes(details) -> list:

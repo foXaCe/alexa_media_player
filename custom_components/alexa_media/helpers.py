@@ -32,7 +32,12 @@ from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 from homeassistant.helpers.redact import async_redact_data
 import wrapt
 
-from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE, TO_REDACT
+from .const import (
+    DATA_ALEXAMEDIA,
+    EVENT_RELOGIN_REQUIRED,
+    EXCEPTION_TEMPLATE,
+    TO_REDACT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 ArgType = TypeVar("ArgType")
@@ -412,7 +417,7 @@ def report_relogin_required(hass, login, email) -> bool:
                 login.stats,
             )
             hass.bus.async_fire(
-                "alexa_media_relogin_required",
+                EVENT_RELOGIN_REQUIRED,
                 event_data={
                     "email": hide_email(email),
                     "url": login.url,
