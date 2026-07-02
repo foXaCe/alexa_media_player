@@ -116,6 +116,9 @@ REAUTH_MAX_AUTO_ATTEMPTS = 3
 # single reboot self-heals instead of needing several manual reboots.
 LOGIN_ERROR_RETRY_TOLERANCE = 5
 
+# Delay before the coordinator retries after an Amazon 429 (seconds)
+COORDINATOR_429_RETRY_AFTER_S = 60.0
+
 # push-health magic numbers
 HTTP2_ERROR_THRESHOLD = 5
 LAST_PUSH_INACTIVITY_SECONDS = 600.0

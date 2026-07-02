@@ -35,6 +35,7 @@ from ..const import (
     CONF_EXTENDED_ENTITY_DISCOVERY,
     CONF_INCLUDE_DEVICES,
     CONF_OAUTH,
+    COORDINATOR_429_RETRY_AFTER_S,
     DATA_ALEXAMEDIA,
     DOMAIN,
     EVENT_RELOGIN_REQUIRED,
@@ -645,7 +646,14 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
     except asyncio.CancelledError:
         # Task cancelled during unload/shutdown; propagate cancellation.
         raise
-    except (AlexapyConnectionError, AlexapyTooManyRequestsError) as err:
+    except AlexapyTooManyRequestsError as err:
+        # Amazon throttling: tell the coordinator when to retry instead of
+        # hammering on the regular interval (HA 2025.11+ retry_after support).
+        raise UpdateFailed(
+            f"Alexa API rate limited: {err}",
+            retry_after=COORDINATOR_429_RETRY_AFTER_S,
+        ) from err
+    except AlexapyConnectionError as err:
         # Surface transient cloud failures to the coordinator as UpdateFailed so
         # last_update_success flips to False (entities become unavailable) and
         # the first refresh raises ConfigEntryNotReady instead of logging an

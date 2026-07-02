@@ -10,6 +10,7 @@ https://community.home-assistant.io/t/echo-devices-alexa-as-media-player-testers
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -307,27 +308,11 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
             f"{ALEXA_DOMAIN}_{hide_email(self._login.email)}"[0:32],
             self._handle_event,
         )
-        # Register to coordinator:
-        email = self._login.email
-        coordinator = self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
-            "coordinator"
-        )
-        if coordinator:
-            coordinator.async_add_listener(self.update)
 
     async def async_will_remove_from_hass(self):
         """Prepare to remove entity."""
         # Register event handler on bus
         self._listener()
-        email = self._login.email
-        coordinator = self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
-            "coordinator"
-        )
-        if coordinator:
-            try:
-                coordinator.async_remove_listener(self.update)
-            except AttributeError:
-                pass  # ignore missing listener
 
     async def _handle_event(self, event):
         # pylint: disable=too-many-branches,too-many-statements
@@ -1213,11 +1198,6 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
             return MediaPlayerState.IDLE
         return MediaPlayerState.IDLE
 
-    def update(self):
-        """Get the latest details on a media player synchronously."""
-        return
-        # return self.hass.add_job(async_update)
-
     @_catch_login_errors
     async def async_update(self):
         """Get the latest details on a media player.
@@ -1785,14 +1765,23 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                     "0",
                     output_file_path,
                 ]
-                if subprocess.run(command, check=True).returncode != 0:
+                try:
+                    # ffmpeg is CPU/IO bound: run it in the executor so the
+                    # event loop is never blocked (quality-scale: no blocking
+                    # calls in coroutines).
+                    await self.hass.async_add_executor_job(
+                        functools.partial(subprocess.run, command, check=True)
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError) as err:
                     _LOGGER.error(
-                        "%s: %s:ffmpeg command FAILED converting %s to %s",
+                        "%s: %s:ffmpeg command FAILED converting %s to %s: %s",
                         hide_email(self._login.email),
                         self,
                         input_file_path,
                         output_file_path,
+                        err,
                     )
+                    return
 
             _LOGGER.debug(
                 "%s: %s:Playing %slocal/alexa_tts%s",

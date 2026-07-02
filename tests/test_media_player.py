@@ -1152,13 +1152,10 @@ async def test_update_notify_targets_remaps_stale_last_called(mock_later):
 # --------------------------------------------------------------------------- #
 
 
-async def test_async_added_to_hass_connects_dispatcher_and_coordinator():
+async def test_async_added_to_hass_connects_dispatcher():
     client = _make_client()
     client.hass = MagicMock()
-    coordinator = MagicMock()
-    client.hass.data = {
-        DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {"coordinator": coordinator}}}
-    }
+    client.hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {}}}}
     client.refresh = AsyncMock()
     listener = MagicMock()
     with patch(
@@ -1169,31 +1166,16 @@ async def test_async_added_to_hass_connects_dispatcher_and_coordinator():
     client.refresh.assert_awaited_once()
     mock_connect.assert_called_once()
     assert client._listener is listener
-    coordinator.async_add_listener.assert_called_once_with(client.update)
 
 
 async def test_async_will_remove_from_hass_disconnects():
     client = _make_client()
     listener = MagicMock()
     client._listener = listener
-    coordinator = MagicMock()
     client.hass = MagicMock()
-    client.hass.data = {
-        DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {"coordinator": coordinator}}}
-    }
+    client.hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {}}}}
     await client.async_will_remove_from_hass()
     listener.assert_called_once()
-    coordinator.async_remove_listener.assert_called_once_with(client.update)
-
-
-def test_update_is_noop():
-    client = _make_client()
-    assert client.update() is None
-
-
-# --------------------------------------------------------------------------- #
-# misc small surfaces
-# --------------------------------------------------------------------------- #
 
 
 async def test_init_calls_refresh_skip_api():
