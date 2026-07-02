@@ -184,5 +184,25 @@
       },
       "name": "更新上次呼叫传感器"
     }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "在实体注册表中找不到实体 {entity_id}。"
+    },
+    "entity_not_alexa_media": {
+      "message": "实体 {entity_id} 不是 Alexa Media Player 实体。"
+    },
+    "entity_no_state": {
+      "message": "实体 {entity_id} 没有可用状态。"
+    },
+    "no_previous_volume": {
+      "message": "{entity_id} 没有可用的先前或当前音量级别。"
+    },
+    "invalid_entries": {
+      "message": "条目数 {entries} 无效；必须为正整数。"
+    },
+    "no_matching_accounts": {
+      "message": "没有 Alexa Media 账户与请求的电子邮件匹配:{emails}。"
+    }
   }
 }

@@ -1102,6 +1102,33 @@ class TestGetEntityData:
             ]
         }
 
+    async def test_malformed_capability_state_is_skipped(self):
+        """Malformed capability JSON is skipped without dropping the rest."""
+        raw = {
+            "deviceStates": [
+                {
+                    "entity": {"entityId": "e1"},
+                    "capabilityStates": [
+                        "not-json{",
+                        None,
+                        '{"namespace": "Alexa.PowerController",'
+                        ' "name": "powerState", "value": "ON"}',
+                    ],
+                }
+            ]
+        }
+        with patch(self._TARGET, new=AsyncMock(return_value=raw)):
+            result = await get_entity_data(MagicMock(), ["e1"])
+        assert result == {
+            "e1": [
+                {
+                    "namespace": "Alexa.PowerController",
+                    "name": "powerState",
+                    "value": "ON",
+                }
+            ]
+        }
+
     async def test_raw_not_dict_returns_empty(self):
         """A non-dict response yields an empty mapping."""
         with patch(self._TARGET, new=AsyncMock(return_value=None)):

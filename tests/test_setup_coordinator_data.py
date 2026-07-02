@@ -17,6 +17,7 @@ from custom_components.alexa_media.const import (
     CONF_EXCLUDE_DEVICES,
     CONF_EXTENDED_ENTITY_DISCOVERY,
     CONF_INCLUDE_DEVICES,
+    COORDINATOR_429_RETRY_AFTER_S,
     DATA_ALEXAMEDIA,
     HTTP2_ERROR_THRESHOLD,
     LOGIN_ERROR_RETRY_TOLERANCE,
@@ -156,11 +157,12 @@ async def test_login_error_escalates_to_relogin_after_tolerance():
     assert account["setup_login_error_count"] == 0
 
 
-async def test_too_many_requests_raises_update_failed():
+async def test_too_many_requests_raises_update_failed_with_retry_after():
     ctx, _ = _ctx({EMAIL: _full_account(_login())})
     p1, p2, p3 = _patch_api(AsyncMock(side_effect=AlexapyTooManyRequestsError("rate")))
-    with p1, p2, p3, pytest.raises(UpdateFailed):
+    with p1, p2, p3, pytest.raises(UpdateFailed) as excinfo:
         await async_update_data(ctx)
+    assert excinfo.value.retry_after == COORDINATOR_429_RETRY_AFTER_S
 
 
 async def test_cancelled_error_propagates():

@@ -184,5 +184,25 @@
       },
       "name": "最後に呼び出されたセンサーを更新"
     }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "エンティティ {entity_id} はエンティティレジストリに見つかりませんでした。"
+    },
+    "entity_not_alexa_media": {
+      "message": "エンティティ {entity_id} は Alexa Media Player のエンティティではありません。"
+    },
+    "entity_no_state": {
+      "message": "エンティティ {entity_id} に利用可能な状態がありません。"
+    },
+    "no_previous_volume": {
+      "message": "{entity_id} には以前または現在の音量レベルがありません。"
+    },
+    "invalid_entries": {
+      "message": "エントリ数 {entries} は無効です。正の整数である必要があります。"
+    },
+    "no_matching_accounts": {
+      "message": "要求されたメールアドレスに一致する Alexa Media アカウントがありません: {emails}。"
+    }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "Alexa Media Player",
   "render_readme": true,
-  "homeassistant": "2024.2.0b0",
+  "homeassistant": "2025.2.0",
   "content_in_root": false
 }
