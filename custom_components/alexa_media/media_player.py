@@ -56,7 +56,6 @@ from .const import (
     DEPENDENT_ALEXA_COMPONENTS,
     MIN_TIME_BETWEEN_FORCED_SCANS,
     MIN_TIME_BETWEEN_SCANS,
-    MODEL_IDS,
     PLAY_SCAN_INTERVAL,
     PUBLIC_URL_ERROR_MESSAGE,
     STREAMING_ERROR_MESSAGE,
@@ -64,6 +63,7 @@ from .const import (
 )
 from .exceptions import TimeoutException
 from .helpers import _catch_login_errors, add_devices, is_http2_enabled, safe_get
+from .model_ids import MODEL_IDS
 
 SUPPORT_ALEXA = (
     MediaPlayerEntityFeature.PAUSE

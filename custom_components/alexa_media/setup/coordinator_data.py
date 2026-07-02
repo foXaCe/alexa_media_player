@@ -4,6 +4,11 @@
 from ``setup_alexa``. It pings the Alexa cloud for devices, bluetooth, DND,
 notifications and entity state, and returns the structured payload the entities
 read. Bound to a :class:`SetupContext` via ``functools.partial`` in ``__init__``.
+
+The refresh cycle is decomposed into named steps (build fetch plan, gather,
+network discovery, device processing, platform forwarding, registry pruning,
+OAuth persistence, last-called polling); ``async_update_data`` only sequences
+them and owns the error handling contract with the coordinator.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ import asyncio
 from json import JSONDecodeError
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from alexapy import AlexaAPI, AlexapyConnectionError, AlexapyLoginError
 from alexapy.errors import AlexapyTooManyRequestsError
@@ -53,6 +58,399 @@ if TYPE_CHECKING:
     from .context import SetupContext
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _collect_monitored_entities(entities: dict[str, Any]) -> set[str]:
+    """Return the Alexa entity ids of enabled coordinator-backed entities."""
+    monitored: set[str] = set()
+
+    # Temperature sensors (stored as entities["sensor"][serial]["Temperature"])
+    for per_serial in entities["sensor"].values():
+        if not isinstance(per_serial, dict):
+            continue
+
+        temp = per_serial.get("Temperature")
+        if temp and temp.enabled:
+            monitored.add(temp.alexa_entity_id)
+
+        # Air Quality sensors:
+        # entities["sensor"][serial]["Air_Quality"][unique_id] = sensor
+        airq = per_serial.get("Air_Quality")
+        if isinstance(airq, dict):
+            for aq_sensor in airq.values():
+                if aq_sensor and aq_sensor.enabled:
+                    monitored.add(aq_sensor.alexa_entity_id)
+        elif airq and getattr(airq, "enabled", False):
+            # Backwards compat if some installs still have a single sensor stored
+            monitored.add(airq.alexa_entity_id)
+
+    for light in entities.get("light", []):
+        if light.enabled:
+            monitored.add(light.alexa_entity_id)
+
+    for binary_sensor in entities.get("binary_sensor", []):
+        if binary_sensor.enabled:
+            monitored.add(binary_sensor.alexa_entity_id)
+
+    for guard in entities.get("alarm_control_panel", {}).values():
+        if guard.enabled:
+            monitored.add(guard.unique_id)
+
+    for smart_switch in entities.get("smart_switch", []):
+        if smart_switch.enabled:
+            monitored.add(smart_switch.alexa_entity_id)
+
+    return monitored
+
+
+def _build_fetch_plan(
+    login_obj,
+    *,
+    cached_devices,
+    new_devices: bool,
+    entities_to_monitor: set[str],
+    should_get_network: bool,
+) -> dict[str, Any]:
+    """Build the named coroutines gathered in one refresh cycle.
+
+    Named keys replace the historical positional ``pop()`` unpacking, so a
+    reordered or conditional task can no longer be silently mis-associated.
+    """
+    plan: dict[str, Any] = {}
+    if cached_devices is None:
+        plan["devices"] = AlexaAPI.get_devices(login_obj)
+    plan["bluetooth"] = AlexaAPI.get_bluetooth(login_obj)
+    plan["preferences"] = AlexaAPI.get_device_preferences(login_obj)
+    plan["dnd"] = AlexaAPI.get_dnd_state(login_obj)
+    if new_devices:
+        plan["auth_info"] = AlexaAPI.get_authentication(login_obj)
+    if entities_to_monitor:
+        plan["entity_state"] = get_entity_data(login_obj, list(entities_to_monitor))
+    if should_get_network:
+        plan["network"] = AlexaAPI.get_network_details(login_obj)
+    return plan
+
+
+async def _run_network_discovery(
+    ctx: SetupContext,
+    login_obj,
+    api_devices,
+    entities_to_monitor: set[str],
+    extended_entity_discovery: bool,
+) -> AlexaEntityData | None:
+    """Process a get_network_details payload into monitored entity state.
+
+    Returns the freshly fetched entity state (or None on timeout). On success
+    ``entities_to_monitor`` is cleared so the regular per-entity fetch result
+    is ignored for this cycle.
+    """
+    hass = ctx.hass
+    email = ctx.email
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+
+    _LOGGER.info("%s: Network Discovery: Checking", hide_email(email))
+    if not api_devices:
+        _LOGGER.warning(
+            "%s: Network Discovery: AlexaAPI returned an unexpected response. Retrying on next polling cycle",
+            hide_email(email),
+        )
+    else:
+        _LOGGER.debug(
+            "%s: Network Discovery: Success, processing response",
+            hide_email(email),
+        )
+        # Only process this once after success
+        account["should_get_network"] = False
+        # The full network details supersede the per-entity fetch this cycle.
+        entities_to_monitor.clear()
+
+    alexa_entities = parse_alexa_entities(
+        api_devices,
+        debug=account["options"].get(CONF_DEBUG, False),
+    )
+    account["devices"].update(alexa_entities)
+
+    monitored: set[str] = set()
+    for type_of_entity, entities in alexa_entities.items():
+        if (
+            type_of_entity in {"guard", "temperature", "air_quality", "aiaqm"}
+            or extended_entity_discovery
+        ):
+            for entity in entities:
+                monitored.add(entity.get("id"))
+                _LOGGER.debug("Monitoring: %s", entity.get("name"))
+    _LOGGER.debug(
+        "%s: Network Discovery: %s entities will be monitored",
+        hide_email(email),
+        len(list(monitored)),
+    )
+    # Use shorter timeout for entity data to avoid blocking
+    _t_ed = time.monotonic()
+    entity_state = None
+    try:
+        entity_state = await asyncio.wait_for(
+            get_entity_data(login_obj, list(monitored)),
+            timeout=10.0,
+        )
+    except TimeoutError:
+        _LOGGER.warning(
+            "%s: get_entity_data timed out after 10s, "
+            "entity states will be fetched on next cycle",
+            hide_email(email),
+        )
+    _LOGGER.debug(
+        "[BOOT] get_entity_data (network) in %.2fs",
+        time.monotonic() - _t_ed,
+    )
+    return entity_state
+
+
+def _schedule_notifications_refresh(ctx: SetupContext, login_obj) -> None:
+    """Kick off the background notifications fetch unless one is running."""
+    hass = ctx.hass
+    email = ctx.email
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+
+    existing_notif_task = account.get("notifications_init_task")
+    if existing_notif_task and not existing_notif_task.done():
+        _LOGGER.debug(
+            "%s: Notifications background task already running, skipping",
+            hide_email(email),
+        )
+        return
+
+    async def _bg_process_notifications():
+        try:
+            await setup_notifications.process_notifications(login_obj, ctx)
+        except (
+            TimeoutError,
+            AlexapyConnectionError,
+            AlexapyLoginError,
+            JSONDecodeError,
+        ):
+            _LOGGER.debug(
+                "%s: Background notifications failed, retrying once",
+                hide_email(email),
+            )
+            try:
+                await asyncio.sleep(5)
+                await setup_notifications.process_notifications(login_obj, ctx)
+            except (
+                TimeoutError,
+                AlexapyConnectionError,
+                AlexapyLoginError,
+                JSONDecodeError,
+            ):
+                _LOGGER.debug(
+                    "%s: Background notifications retry failed",
+                    hide_email(email),
+                )
+
+    account["notifications_init_task"] = hass.async_create_background_task(
+        _bg_process_notifications(),
+        f"{DOMAIN}_notifications_init",
+    )
+
+
+async def _apply_device_updates(
+    ctx: SetupContext,
+    *,
+    devices,
+    bluetooth,
+    preferences,
+    dnd,
+    auth_info,
+    include,
+    exclude,
+    existing_serials: set[str],
+) -> list[str]:
+    """Filter, enrich and store the fetched devices; return new device names."""
+    hass = ctx.hass
+    email = ctx.email
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+
+    new_alexa_clients: list[str] = []  # list of newly discovered device names
+    exclude_filter = []
+    include_filter = []
+
+    for device in devices:
+        serial = device["serialNumber"]
+        dev_name = device["accountName"]
+        if include and dev_name not in include:
+            include_filter.append(dev_name)
+            if "appDeviceList" in device:
+                for app in device["appDeviceList"]:
+                    account["excluded"][app["serialNumber"]] = device
+            account["excluded"][serial] = device
+            continue
+        if exclude and dev_name in exclude:
+            exclude_filter.append(dev_name)
+            if "appDeviceList" in device:
+                for app in device["appDeviceList"]:
+                    account["excluded"][app["serialNumber"]] = device
+            account["excluded"][serial] = device
+            continue
+
+        if (
+            dev_name not in include_filter
+            and device.get("capabilities")
+            and not any(
+                x in device["capabilities"]
+                for x in ["MUSIC_SKILL", "TIMERS_AND_ALARMS", "REMINDERS"]
+            )
+        ):
+            # skip devices without music or notification skill
+            _LOGGER.debug("Excluding %s for lacking capability", dev_name)
+            continue
+
+        if bluetooth is not None and "bluetoothStates" in bluetooth:
+            for b_state in bluetooth["bluetoothStates"]:
+                if serial == b_state["deviceSerialNumber"]:
+                    device["bluetooth_state"] = b_state
+                    break
+
+        if preferences is not None and "devicePreferences" in preferences:
+            for dev in preferences["devicePreferences"]:
+                if dev["deviceSerialNumber"] == serial:
+                    device["locale"] = dev["locale"]
+                    device["timeZoneId"] = dev["timeZoneId"]
+                    _LOGGER.debug(
+                        "%s: Locale %s timezone %s",
+                        dev_name,
+                        device["locale"],
+                        device["timeZoneId"],
+                    )
+                    break
+
+        if dnd is not None and "doNotDisturbDeviceStatusList" in dnd:
+            for dev in dnd["doNotDisturbDeviceStatusList"]:
+                if dev["deviceSerialNumber"] == serial:
+                    device["dnd"] = dev["enabled"]
+                    _LOGGER.debug("%s: DND %s", dev_name, device["dnd"])
+                    account["devices"]["switch"].setdefault(serial, {"dnd": True})
+                    break
+
+        account["auth_info"] = device["auth_info"] = auth_info
+        account["devices"]["media_player"][serial] = device
+
+        if serial not in existing_serials:
+            new_alexa_clients.append(dev_name)
+        elif (
+            serial in existing_serials
+            and account["entities"]["media_player"].get(serial)
+            and account["entities"]["media_player"].get(serial).enabled
+        ):
+            await (
+                account["entities"]["media_player"]
+                .get(serial)
+                .refresh(device, skip_api=True)
+            )
+    _LOGGER.debug(
+        "%s: Existing: %s New: %s;"
+        " Filtered out by not being in include: %s "
+        "or in exclude: %s",
+        hide_email(email),
+        list(account["entities"]["media_player"].values()),
+        new_alexa_clients,
+        include_filter,
+        exclude_filter,
+    )
+    return new_alexa_clients
+
+
+async def _forward_new_platforms(ctx: SetupContext) -> None:
+    """Load the entity platforms once new devices have been discovered."""
+    hass = ctx.hass
+    email = ctx.email
+    metrics = ctx.metrics
+
+    # Load multiple platforms in parallel using async_forward_entry_setups
+    _LOGGER.debug("Loading platforms: %s", ", ".join(ALEXA_COMPONENTS))
+    try:
+        _t = time.monotonic()
+        await hass.config_entries.async_forward_entry_setups(
+            ctx.config_entry, ALEXA_COMPONENTS
+        )
+        _LOGGER.debug("[BOOT] platform loading in %.2fs", time.monotonic() - _t)
+        if metrics:
+            metrics.record_boot_stage(f"platforms_loaded_{hide_email(email)}")
+    except (TimeoutError, TimeoutException) as ex:
+        _LOGGER.error("Error while loading platforms: %s", ex)
+        raise ConfigEntryNotReady(f"Timeout while loading platforms: {ex}") from ex
+
+
+def _prune_stale_devices(ctx: SetupContext) -> None:
+    """Remove registry devices that no longer map to a known Alexa device."""
+    hass = ctx.hass
+    email = ctx.email
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+
+    device_registry = dr.async_get(hass)
+    entity_backed_ids = _entity_backed_device_identifiers(account)
+    media_player_devices = account["devices"]["media_player"]
+    for device_entry in dr.async_entries_for_config_entry(
+        device_registry, ctx.config_entry.entry_id
+    ):
+        for _, identifier in device_entry.identifiers:
+            if (
+                identifier in media_player_devices
+                or identifier
+                in (slugify(f"{x}_{email}") for x in media_player_devices.keys())
+                or identifier in entity_backed_ids
+            ):
+                break
+        else:
+            device_registry.async_remove_device(device_entry.id)
+            _LOGGER.debug(
+                "%s: Removing stale device %s",
+                hide_email(email),
+                device_entry.name,
+            )
+
+
+async def _persist_oauth(ctx: SetupContext, login_obj) -> None:
+    """Save the cookie file and mirror refreshed OAuth tokens into the entry."""
+    hass = ctx.hass
+    await login_obj.save_cookiefile()
+    if login_obj.access_token:
+        hass.config_entries.async_update_entry(
+            ctx.config_entry,
+            data={
+                **ctx.config_entry.data,
+                CONF_OAUTH: {
+                    "access_token": login_obj.access_token,
+                    "refresh_token": login_obj.refresh_token,
+                    "expires_in": login_obj.expires_in,
+                    "mac_dms": login_obj.mac_dms,
+                    "code_verifier": login_obj.code_verifier,
+                    "authorization_code": login_obj.authorization_code,
+                },
+            },
+        )
+
+
+def _schedule_last_called_poll(
+    ctx: SetupContext, login_obj, *, first_run: bool
+) -> None:
+    """Trigger a last_called probe when push is down or on the first cycle."""
+    hass = ctx.hass
+    email = ctx.email
+    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+
+    if not (first_run or not _push_healthy(account)):
+        return
+    if not _network_allowed(login_obj):
+        return
+    trigger = account.get("last_called_probe_trigger")
+    if callable(trigger):
+        trigger("POLL_REFRESH", None)
+    else:
+        # fallback if probe not initialized for some reason
+        hass.async_create_background_task(
+            _async_update_last_called_global(hass, login_obj, email),
+            f"{DOMAIN}_last_called_poll_{hide_email(email)}",
+        )
+    account["first_run"] = False
 
 
 async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
@@ -99,21 +497,13 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
     login_obj = account.get("login_obj")
     if not login_obj or not _network_allowed(login_obj):
         return None
-    account = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
     existing_serials = set(_existing_serials(hass, login_obj))
     existing_serials |= _entity_backed_serials(account)
-    existing_entities = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"][
-        "media_player"
-    ].values()
-    auth_info = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get("auth_info")
-    new_devices = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"]
-    extended_entity_discovery = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-        "options"
-    ].get(CONF_EXTENDED_ENTITY_DISCOVERY)
-    should_get_network = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-        "should_get_network"
-    ]
-    first_run = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["first_run"]
+    auth_info = account.get("auth_info")
+    new_devices = account["new_devices"]
+    extended_entity_discovery = account["options"].get(CONF_EXTENDED_ENTITY_DISCOVERY)
+    should_get_network = account["should_get_network"]
+    first_run = account["first_run"]
     devices = {}
     bluetooth = {}
     preferences = {}
@@ -124,274 +514,101 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
     entry_id = config_entry.entry_id if config_entry else ""
     cache_key_prefix = f"{email}_{entry_id}"
     cached_devices = None
-    _used_cached_devices = False
     if metrics:
         cached_devices = metrics.api_cache.get(f"{cache_key_prefix}_devices")
-
-    if cached_devices and not new_devices:
+    if cached_devices is not None and new_devices:
+        cached_devices = None
+    if cached_devices is not None:
         _LOGGER.debug("%s: Using cached devices data", hide_email(email))
         # NOTE: DataCache returns direct references. We intentionally enrich device dicts
         # in-place each refresh cycle (bluetooth_state/locale/dnd/etc.).
         devices = cached_devices
-        _used_cached_devices = True
-        # Still need fresh bluetooth, preferences, and DND
-        tasks = [
-            AlexaAPI.get_bluetooth(login_obj),
-            AlexaAPI.get_device_preferences(login_obj),
-            AlexaAPI.get_dnd_state(login_obj),
-        ]
-    else:
-        tasks = [
-            AlexaAPI.get_devices(login_obj),
-            AlexaAPI.get_bluetooth(login_obj),
-            AlexaAPI.get_device_preferences(login_obj),
-            AlexaAPI.get_dnd_state(login_obj),
-        ]
-    if new_devices:
-        tasks.append(AlexaAPI.get_authentication(login_obj))
 
-    entities_to_monitor = set()
+    entities_to_monitor = _collect_monitored_entities(account["entities"])
 
-    # Temperature sensors (stored as entities["sensor"][serial]["Temperature"] = sensor)
-    for per_serial in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"][
-        "sensor"
-    ].values():
-        if not isinstance(per_serial, dict):
-            continue
+    plan = _build_fetch_plan(
+        login_obj,
+        cached_devices=cached_devices,
+        new_devices=new_devices,
+        entities_to_monitor=entities_to_monitor,
+        should_get_network=should_get_network,
+    )
 
-        temp = per_serial.get("Temperature")
-        if temp and temp.enabled:
-            entities_to_monitor.add(temp.alexa_entity_id)
-
-        # Air Quality sensors:
-        # entities["sensor"][serial]["Air_Quality"][unique_id] = sensor
-        airq = per_serial.get("Air_Quality")
-        if isinstance(airq, dict):
-            for aq_sensor in airq.values():
-                if aq_sensor and aq_sensor.enabled:
-                    entities_to_monitor.add(aq_sensor.alexa_entity_id)
-        elif airq and getattr(airq, "enabled", False):
-            # Backwards compat if some installs still have a single sensor stored
-            entities_to_monitor.add(airq.alexa_entity_id)
-
-    for light in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"].get(
-        "light", []
-    ):
-        if light.enabled:
-            entities_to_monitor.add(light.alexa_entity_id)
-
-    for binary_sensor in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"].get(
-        "binary_sensor", []
-    ):
-        if binary_sensor.enabled:
-            entities_to_monitor.add(binary_sensor.alexa_entity_id)
-
-    for guard in (
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"]
-        .get("alarm_control_panel", {})
-        .values()
-    ):
-        if guard.enabled:
-            entities_to_monitor.add(guard.unique_id)
-
-    for smart_switch in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"].get(
-        "smart_switch", []
-    ):
-        if smart_switch.enabled:
-            entities_to_monitor.add(smart_switch.alexa_entity_id)
-
-    if entities_to_monitor:
-        tasks.append(get_entity_data(login_obj, list(entities_to_monitor)))
-
-    if should_get_network:
-        tasks.append(AlexaAPI.get_network_details(login_obj))
-
-    optional_task_results = []
     try:
-        if tasks:
-            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-            # handled by the data update coordinator.
-            # Increase timeout from 30s to 45s to permit
-            # get_network_details() retries which could up to 30s.
-            async with asyncio.timeout(45):
-                start_fetch = time.monotonic()
-                if _used_cached_devices:
-                    (
-                        bluetooth,
-                        preferences,
-                        dnd,
-                        *optional_task_results,
-                    ) = await asyncio.gather(*tasks)
-                else:
-                    (
-                        devices,
-                        bluetooth,
-                        preferences,
-                        dnd,
-                        *optional_task_results,
-                    ) = await asyncio.gather(*tasks)
+        # Note: asyncio.TimeoutError and aiohttp.ClientError are already
+        # handled by the data update coordinator.
+        # Increase timeout from 30s to 45s to permit
+        # get_network_details() retries which could up to 30s.
+        async with asyncio.timeout(45):
+            start_fetch = time.monotonic()
+            gathered = await asyncio.gather(*plan.values())
+            results = dict(zip(plan.keys(), gathered, strict=True))
+            devices = results.get("devices", devices)
+            bluetooth = results["bluetooth"]
+            preferences = results["preferences"]
+            dnd = results["dnd"]
 
-                fetch_time = time.monotonic() - start_fetch
-                # Fetch succeeded -> auth is healthy; clear the transient
-                # login-error tolerance counter.
-                account["setup_login_error_count"] = 0
-                _LOGGER.debug(
-                    "[BOOT] API fetch (%d tasks, cached=%s) in %.2fs",
-                    len(tasks) if tasks else 0,
-                    _used_cached_devices,
-                    fetch_time,
-                )
-                # Record API call metrics
-                if metrics:
-                    metrics.record_api_call("initial_fetch", fetch_time)
-                    # Cache the devices for faster next boot (only freshly fetched)
-                    if not _used_cached_devices:
-                        metrics.api_cache.cache_set(
-                            f"{cache_key_prefix}_devices", devices
-                        )
-
-                _t_post = time.monotonic()
-                if should_get_network and optional_task_results:
-                    # First run is a special case. Get the state of all entities(including disabled)
-                    # This ensures all entities have state during startup without needing to request coordinator refresh
-
-                    _LOGGER.info("%s: Network Discovery: Checking", hide_email(email))
-                    api_devices = optional_task_results.pop()
-                    if not api_devices:
-                        _LOGGER.warning(
-                            "%s: Network Discovery: AlexaAPI returned an unexpected response. Retrying on next polling cycle",
-                            hide_email(email),
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "%s: Network Discovery: Success, processing response",
-                            hide_email(email),
-                        )
-                        # Only process this once after success
-                        hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                            "should_get_network"
-                        ] = False
-
-                        # Discard the entities_to_monitor results since we now have full network details
-                        if entities_to_monitor and optional_task_results:
-                            optional_task_results.pop()
-                            entities_to_monitor.clear()
-
-                    alexa_entities = parse_alexa_entities(
-                        api_devices,
-                        debug=hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                            "options"
-                        ].get(CONF_DEBUG, False),
-                    )
-                    hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"].update(
-                        alexa_entities
-                    )
-
-                    _entities_to_monitor = set()
-                    for type_of_entity, entities in alexa_entities.items():
-                        if (
-                            type_of_entity
-                            in {"guard", "temperature", "air_quality", "aiaqm"}
-                            or extended_entity_discovery
-                        ):
-                            for entity in entities:
-                                _entities_to_monitor.add(entity.get("id"))
-                                _LOGGER.debug("Monitoring: %s", entity.get("name"))
-                    _LOGGER.debug(
-                        "%s: Network Discovery: %s entities will be monitored",
-                        hide_email(email),
-                        len(list(_entities_to_monitor)),
-                    )
-                    # Use shorter timeout for entity data to avoid blocking
-                    _t_ed = time.monotonic()
-                    try:
-                        entity_state = await asyncio.wait_for(
-                            get_entity_data(login_obj, list(_entities_to_monitor)),
-                            timeout=10.0,
-                        )
-                    except TimeoutError:
-                        _LOGGER.warning(
-                            "%s: get_entity_data timed out after 10s, "
-                            "entity states will be fetched on next cycle",
-                            hide_email(email),
-                        )
-                    _LOGGER.debug(
-                        "[BOOT] get_entity_data (network) in %.2fs",
-                        time.monotonic() - _t_ed,
-                    )
-
-            if entities_to_monitor and optional_task_results:
-                entity_state = optional_task_results.pop()
-                _LOGGER.debug(
-                    "%s: Processing %s entities to monitor",
-                    hide_email(email),
-                    len(list(entities_to_monitor)),
-                )
-
-            if new_devices and optional_task_results:
-                auth_info = optional_task_results.pop()
-                _LOGGER.debug(
-                    "%s: Found %s devices, %s bluetooth",
-                    hide_email(email),
-                    len(devices) if devices is not None else "",
-                    (
-                        len(bluetooth.get("bluetoothStates", []))
-                        if bluetooth is not None
-                        else ""
-                    ),
-                )
-
-            # Process notifications in background to avoid blocking boot
-            # (process_notifications has a 4s sleep + API call)
+            fetch_time = time.monotonic() - start_fetch
+            # Fetch succeeded -> auth is healthy; clear the transient
+            # login-error tolerance counter.
+            account["setup_login_error_count"] = 0
             _LOGGER.debug(
-                "[BOOT] post-fetch processing in %.2fs", time.monotonic() - _t_post
+                "[BOOT] API fetch (%d tasks, cached=%s) in %.2fs",
+                len(plan),
+                cached_devices is not None,
+                fetch_time,
+            )
+            # Record API call metrics
+            if metrics:
+                metrics.record_api_call("initial_fetch", fetch_time)
+                # Cache the devices for faster next boot (only freshly fetched)
+                if cached_devices is None:
+                    metrics.api_cache.cache_set(f"{cache_key_prefix}_devices", devices)
+
+            _t_post = time.monotonic()
+            if "network" in results:
+                # First run is a special case. Get the state of all entities
+                # (including disabled). This ensures all entities have state
+                # during startup without needing to request coordinator refresh.
+                discovered_state = await _run_network_discovery(
+                    ctx,
+                    login_obj,
+                    results["network"],
+                    entities_to_monitor,
+                    extended_entity_discovery,
+                )
+                if discovered_state is not None:
+                    entity_state = discovered_state
+
+        # On successful network discovery entities_to_monitor was cleared, so
+        # the per-entity fetch result is only consumed when it is still wanted.
+        if entities_to_monitor and "entity_state" in results:
+            entity_state = results["entity_state"]
+            _LOGGER.debug(
+                "%s: Processing %s entities to monitor",
+                hide_email(email),
+                len(list(entities_to_monitor)),
             )
 
-            existing_notif_task = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
-                "notifications_init_task"
+        if "auth_info" in results:
+            auth_info = results["auth_info"]
+            _LOGGER.debug(
+                "%s: Found %s devices, %s bluetooth",
+                hide_email(email),
+                len(devices) if devices is not None else "",
+                (
+                    len(bluetooth.get("bluetoothStates", []))
+                    if bluetooth is not None
+                    else ""
+                ),
             )
-            if existing_notif_task and not existing_notif_task.done():
-                _LOGGER.debug(
-                    "%s: Notifications background task already running, skipping",
-                    hide_email(email),
-                )
-            else:
 
-                async def _bg_process_notifications():
-                    try:
-                        await setup_notifications.process_notifications(login_obj, ctx)
-                    except (
-                        TimeoutError,
-                        AlexapyConnectionError,
-                        AlexapyLoginError,
-                        JSONDecodeError,
-                    ):
-                        _LOGGER.debug(
-                            "%s: Background notifications failed, retrying once",
-                            hide_email(email),
-                        )
-                        try:
-                            await asyncio.sleep(5)
-                            await setup_notifications.process_notifications(
-                                login_obj, ctx
-                            )
-                        except (
-                            TimeoutError,
-                            AlexapyConnectionError,
-                            AlexapyLoginError,
-                            JSONDecodeError,
-                        ):
-                            _LOGGER.debug(
-                                "%s: Background notifications retry failed",
-                                hide_email(email),
-                            )
-
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                    "notifications_init_task"
-                ] = hass.async_create_background_task(
-                    _bg_process_notifications(),
-                    f"{DOMAIN}_notifications_init",
-                )
+        # Process notifications in background to avoid blocking boot
+        # (process_notifications has a 4s sleep + API call)
+        _LOGGER.debug(
+            "[BOOT] post-fetch processing in %.2fs", time.monotonic() - _t_post
+        )
+        _schedule_notifications_refresh(ctx, login_obj)
 
     except (AlexapyLoginError, JSONDecodeError) as err:
         # A login error here is often a transient auth blip at boot (a flaky
@@ -436,197 +653,29 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
         raise UpdateFailed(f"Error communicating with Alexa API: {err}") from err
 
     _t_proc = time.monotonic()
-    new_alexa_clients = []  # list of newly discovered device names
-    exclude_filter = []
-    include_filter = []
-
-    for device in devices:
-        serial = device["serialNumber"]
-        dev_name = device["accountName"]
-        if include and dev_name not in include:
-            include_filter.append(dev_name)
-            if "appDeviceList" in device:
-                for app in device["appDeviceList"]:
-                    (
-                        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
-                            app["serialNumber"]
-                        ]
-                    ) = device
-            hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = device
-            continue
-        if exclude and dev_name in exclude:
-            exclude_filter.append(dev_name)
-            if "appDeviceList" in device:
-                for app in device["appDeviceList"]:
-                    (
-                        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
-                            app["serialNumber"]
-                        ]
-                    ) = device
-            hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = device
-            continue
-
-        if (
-            dev_name not in include_filter
-            and device.get("capabilities")
-            and not any(
-                x in device["capabilities"]
-                for x in ["MUSIC_SKILL", "TIMERS_AND_ALARMS", "REMINDERS"]
-            )
-        ):
-            # skip devices without music or notification skill
-            _LOGGER.debug("Excluding %s for lacking capability", dev_name)
-            continue
-
-        if bluetooth is not None and "bluetoothStates" in bluetooth:
-            for b_state in bluetooth["bluetoothStates"]:
-                if serial == b_state["deviceSerialNumber"]:
-                    device["bluetooth_state"] = b_state
-                    break
-
-        if preferences is not None and "devicePreferences" in preferences:
-            for dev in preferences["devicePreferences"]:
-                if dev["deviceSerialNumber"] == serial:
-                    device["locale"] = dev["locale"]
-                    device["timeZoneId"] = dev["timeZoneId"]
-                    _LOGGER.debug(
-                        "%s: Locale %s timezone %s",
-                        dev_name,
-                        device["locale"],
-                        device["timeZoneId"],
-                    )
-                    break
-
-        if dnd is not None and "doNotDisturbDeviceStatusList" in dnd:
-            for dev in dnd["doNotDisturbDeviceStatusList"]:
-                if dev["deviceSerialNumber"] == serial:
-                    device["dnd"] = dev["enabled"]
-                    _LOGGER.debug("%s: DND %s", dev_name, device["dnd"])
-                    hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
-                        "switch"
-                    ].setdefault(serial, {"dnd": True})
-                    break
-
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["auth_info"] = device[
-            "auth_info"
-        ] = auth_info
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"]["media_player"][
-            serial
-        ] = device
-
-        if serial not in existing_serials:
-            new_alexa_clients.append(dev_name)
-        elif (
-            serial in existing_serials
-            and hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"][
-                "media_player"
-            ].get(serial)
-            and hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"][
-                "media_player"
-            ]
-            .get(serial)
-            .enabled
-        ):
-            await (
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["entities"][
-                    "media_player"
-                ]
-                .get(serial)
-                .refresh(device, skip_api=True)
-            )
-    _LOGGER.debug(
-        "%s: Existing: %s New: %s;"
-        " Filtered out by not being in include: %s "
-        "or in exclude: %s",
-        hide_email(email),
-        list(existing_entities),
-        new_alexa_clients,
-        include_filter,
-        exclude_filter,
+    new_alexa_clients = await _apply_device_updates(
+        ctx,
+        devices=devices,
+        bluetooth=bluetooth,
+        preferences=preferences,
+        dnd=dnd,
+        auth_info=auth_info,
+        include=include,
+        exclude=exclude,
+        existing_serials=existing_serials,
     )
-
     _LOGGER.debug("[BOOT] device processing in %.2fs", time.monotonic() - _t_proc)
 
     if new_alexa_clients:
+        # CONF_PASSWORD contains sensitive info which is no longer needed
         cleaned_config = config.copy()
         cleaned_config.pop(CONF_PASSWORD, None)
-        # CONF_PASSWORD contains sensitive info which is no longer needed
-        # Load multiple platforms in parallel using async_forward_entry_setups
-        _LOGGER.debug("Loading platforms: %s", ", ".join(ALEXA_COMPONENTS))
-        try:
-            _t = time.monotonic()
-            await hass.config_entries.async_forward_entry_setups(
-                config_entry, ALEXA_COMPONENTS
-            )
-            _LOGGER.debug("[BOOT] platform loading in %.2fs", time.monotonic() - _t)
-            if metrics:
-                metrics.record_boot_stage(f"platforms_loaded_{hide_email(email)}")
-        except (TimeoutError, TimeoutException) as ex:
-            _LOGGER.error(f"Error while loading platforms: {ex}")
-            raise ConfigEntryNotReady(f"Timeout while loading platforms: {ex}") from ex
+        await _forward_new_platforms(ctx)
 
-    hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"] = False
-    # prune stale devices
-    device_registry = dr.async_get(hass)
-    entity_backed_ids = _entity_backed_device_identifiers(
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]
-    )
-    for device_entry in dr.async_entries_for_config_entry(
-        device_registry, config_entry.entry_id
-    ):
-        for _, identifier in device_entry.identifiers:
-            if (
-                identifier
-                in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
-                    "media_player"
-                ]
-                or identifier
-                in (
-                    slugify(f"{x}_{email}")
-                    for x in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"][
-                        "media_player"
-                    ].keys()
-                )
-                or identifier in entity_backed_ids
-            ):
-                break
-        else:
-            device_registry.async_remove_device(device_entry.id)
-            _LOGGER.debug(
-                "%s: Removing stale device %s",
-                hide_email(email),
-                device_entry.name,
-            )
-
-    await login_obj.save_cookiefile()
-    if login_obj.access_token:
-        hass.config_entries.async_update_entry(
-            config_entry,
-            data={
-                **config_entry.data,
-                CONF_OAUTH: {
-                    "access_token": login_obj.access_token,
-                    "refresh_token": login_obj.refresh_token,
-                    "expires_in": login_obj.expires_in,
-                    "mac_dms": login_obj.mac_dms,
-                    "code_verifier": login_obj.code_verifier,
-                    "authorization_code": login_obj.authorization_code,
-                },
-            },
-        )
-
-    if first_run or not _push_healthy(account):
-        if _network_allowed(login_obj):
-            trigger = account.get("last_called_probe_trigger")
-            if callable(trigger):
-                trigger("POLL_REFRESH", None)
-            else:
-                # fallback if probe not initialized for some reason
-                hass.async_create_background_task(
-                    _async_update_last_called_global(hass, login_obj, email),
-                    f"{DOMAIN}_last_called_poll_{hide_email(email)}",
-                )
-            hass.data[DATA_ALEXAMEDIA]["accounts"][email]["first_run"] = False
+    account["new_devices"] = False
+    _prune_stale_devices(ctx)
+    await _persist_oauth(ctx, login_obj)
+    _schedule_last_called_poll(ctx, login_obj, first_run=first_run)
 
     return entity_state
 
