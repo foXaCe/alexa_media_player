@@ -1111,8 +1111,10 @@ class TestGetEntityData:
                     "capabilityStates": [
                         "not-json{",
                         None,
-                        '{"namespace": "Alexa.PowerController",'
-                        ' "name": "powerState", "value": "ON"}',
+                        (
+                            '{"namespace": "Alexa.PowerController",'
+                            ' "name": "powerState", "value": "ON"}'
+                        ),
                     ],
                 }
             ]

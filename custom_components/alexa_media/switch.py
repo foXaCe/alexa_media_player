@@ -213,7 +213,7 @@ class AlexaMediaSwitch(SwitchEntity, AlexaMedia):
         self._unique_id_suffix = unique_id_suffix
         self._switch_property = switch_property
         self._switch_function = switch_function
-        super().__init__(client, client._login)
+        AlexaMedia.__init__(self, client, client._login)
 
     async def async_added_to_hass(self):
         """Store register state change callback."""
