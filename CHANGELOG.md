@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Optimistic boot: entry setup dropped from ~2.3-3.3s to ~1.3s.** The device inventory is persisted to `.storage/alexa_media.<entry_id>.device_snapshot` (private file) after each refresh; on the next startup all entities are recreated immediately from that snapshot — the boot path keeps only the login probe as an Amazon round-trip — while the real first refresh and the HTTP/2 push connection finish in the background (~1s later). Current include/exclude filters are applied to the snapshot so devices excluded since the last run are not resurrected; a missing or corrupt snapshot falls back to the classic blocking first refresh; the snapshot is deleted with the config entry.
+
 ### Fixed
 
 - **Bus listeners no longer leak across reloads**: the `relogin`/`login_success` event listeners and the options update listener are now registered through `entry.async_on_unload`, so Home Assistant unsubscribes them on unload and on failed setup (previously they accumulated on every reload).

@@ -430,6 +430,13 @@ async def _persist_oauth(ctx: SetupContext, login_obj) -> None:
         )
 
 
+def _save_device_snapshot(account: dict[str, Any]) -> None:
+    """Persist the refreshed device inventory for the next optimistic boot."""
+    store = account.get("device_snapshot_store")
+    if store is not None:
+        store.async_delay_save(account["devices"])
+
+
 def _schedule_last_called_poll(
     ctx: SetupContext, login_obj, *, first_run: bool
 ) -> None:
@@ -683,6 +690,7 @@ async def async_update_data(ctx: SetupContext) -> AlexaEntityData | None:
     account["new_devices"] = False
     _prune_stale_devices(ctx)
     await _persist_oauth(ctx, login_obj)
+    _save_device_snapshot(account)
     _schedule_last_called_poll(ctx, login_obj, first_run=first_run)
 
     return entity_state

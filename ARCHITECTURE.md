@@ -36,6 +36,7 @@ closures, which is what makes them testable in isolation.
 | `setup/dnd.py` | Do-Not-Disturb state sync with cooldown throttling |
 | `setup/bluetooth.py` | Bluetooth state sync on push events |
 | `coordinator.py` | `AlexaMediaCoordinator` — `DataUpdateCoordinator` subclass (debouncer, HTTP/2-aware interval) |
+| `device_snapshot.py` | `DeviceSnapshotStore` — persisted device inventory enabling optimistic boot (entities recreated from the last snapshot before any Amazon round-trip; real refresh runs in the background) |
 | `runtime_data.py` | `AlexaRuntimeData` — typed per-`ConfigEntry` state, plus the `AlexaConfigEntry = ConfigEntry[AlexaRuntimeData]` alias |
 | `config_flow.py` | UI configuration, reauth and options flow |
 | `alexa_entity.py` | Parsing of raw Alexa entity payloads into typed data |
