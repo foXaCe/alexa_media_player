@@ -39,8 +39,9 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STARTED,
     EVENT_HOMEASSISTANT_STOP,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import UnknownFlow
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.loader import async_get_integration
@@ -61,7 +62,6 @@ from .const import (
     CONF_QUEUE_DELAY,
     CONF_SCAN_INTERVAL,
     DATA_ALEXAMEDIA,
-    DATA_LISTENER,
     DEFAULT_EXTENDED_ENTITY_DISCOVERY,
     DEFAULT_PUBLIC_URL,
     DEFAULT_QUEUE_DELAY,
@@ -81,7 +81,7 @@ from .helpers import (
 )
 from .metrics import AlexaMetrics, get_metrics
 from .notify import async_unload_entry as notify_async_unload_entry
-from .runtime_data import AlexaRuntimeData
+from .runtime_data import AlexaConfigEntry, AlexaRuntimeData
 from .services import AlexaMediaServices
 from .setup import (
     SetupContext,
@@ -214,8 +214,9 @@ async def async_setup(hass, config):
     return True
 
 
-# @retry_async(limit=5, delay=5, catch_exceptions=True)
-async def async_setup_entry(hass, config_entry):
+async def async_setup_entry(
+    hass: HomeAssistant, config_entry: AlexaConfigEntry
+) -> bool:
     """Set up Alexa Media Player as config entry.
 
     This function uses the new runtime_data pattern for type-safe data storage.
@@ -342,9 +343,11 @@ async def async_setup_entry(hass, config_entry):
                 ),
                 CONF_DEBUG: config_entry.data.get(CONF_DEBUG, False),
             },
-            DATA_LISTENER: [config_entry.add_update_listener(update_listener)],
         },
     )
+    # HA runs these unsubscribes on unload AND on failed setup, so listeners can
+    # never accumulate across reloads or ConfigEntryNotReady retries.
+    config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
     uuid_dict = await calculate_uuid(hass, email, url)
     uuid = uuid_dict["uuid"]
     hass.data[DATA_ALEXAMEDIA]["accounts"][email]["second_account_index"] = uuid_dict[
@@ -367,19 +370,24 @@ async def async_setup_entry(hass, config_entry):
     hass.data[DATA_ALEXAMEDIA]["accounts"][email]["login_obj"] = login
     hass.data[DATA_ALEXAMEDIA]["accounts"][email]["last_push_activity"] = 0
 
-    # Create runtime_data for optimized architecture
-    # This provides type-safe access to account data
-    if not hasattr(config_entry, "runtime_data") or config_entry.runtime_data is None:
-        config_entry.runtime_data = AlexaRuntimeData(
-            login_obj=login,
-            config_entry=config_entry,
-            second_account_index=uuid_dict["index"],
-        )
+    # HA deletes runtime_data on unload, so every (re)setup starts fresh.
+    config_entry.runtime_data = AlexaRuntimeData(
+        login_obj=login,
+        config_entry=config_entry,
+        second_account_index=uuid_dict["index"],
+    )
     if not hass.data[DATA_ALEXAMEDIA]["accounts"][email]["second_account_index"]:
+        # listen_once unsubs are not safe to call after they fire, so these two
+        # are left to self-clean; their callbacks are no-ops once the account
+        # dict is gone.
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, close_alexa_media)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, complete_startup)
-    hass.bus.async_listen("alexa_media_relogin_required", relogin)
-    hass.bus.async_listen("alexa_media_relogin_success", login_success)
+    config_entry.async_on_unload(
+        hass.bus.async_listen("alexa_media_relogin_required", relogin)
+    )
+    config_entry.async_on_unload(
+        hass.bus.async_listen("alexa_media_relogin_success", login_success)
+    )
     try:
         _t = time.monotonic()
         # Pass the raw cookies from alexapy's own loader straight to login(), like
@@ -432,12 +440,18 @@ async def async_setup_entry(hass, config_entry):
                 "[BOOT] setup_entry total: %.2fs", time.monotonic() - _boot_start
             )
             return True
-        return False
+        # test_login_status already started the custom reauth flow (with its
+        # persistent notification); raising marks the entry as auth-failed in
+        # the UI instead of a generic setup error. HA's own async_start_reauth
+        # is a no-op while that flow is in progress.
+        raise ConfigEntryAuthFailed(f"Login failed for {hide_email(email)}")
     except AlexapyConnectionError as err:
         raise ConfigEntryNotReady(str(err) or "Connection Error during login") from err
 
 
-async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
+async def setup_alexa(
+    hass: HomeAssistant, config_entry: AlexaConfigEntry, login_obj: AlexaLogin
+) -> bool:
     # pylint: disable=too-many-statements,too-many-locals
     """Set up a alexa api based on host parameter."""
 
@@ -507,10 +521,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
     coordinator = account_data.get("coordinator")
 
-    # Get runtime_data for optimized coordinator
-    runtime_data = (
-        config_entry.runtime_data if hasattr(config_entry, "runtime_data") else None
-    )
+    # Get runtime_data for optimized coordinator. getattr covers relogin paths
+    # exercised before async_setup_entry has assigned it (tests, races).
+    runtime_data = getattr(config_entry, "runtime_data", None)
 
     if coordinator is None:
         _LOGGER.debug("%s: Creating optimized coordinator", hide_email(email))
@@ -572,8 +585,8 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
     return True
 
 
-async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry"""
+async def async_unload_entry(hass: HomeAssistant, entry: AlexaConfigEntry) -> bool:
+    """Unload a config entry."""
     email = entry.data["email"]
     _LOGGER.debug("Unloading entry: %s", hide_email(email))
     for task_key in (
@@ -631,8 +644,7 @@ async def async_unload_entry(hass, entry) -> bool:
         except Exception:
             _LOGGER.error("Error unloading: %s", component)
     await close_connections(hass, email)
-    for listener in hass.data[DATA_ALEXAMEDIA]["accounts"][email][DATA_LISTENER]:
-        listener()
+    # Bus/update listeners are unsubscribed by HA via entry.async_on_unload.
     hass.data[DATA_ALEXAMEDIA]["accounts"].pop(email)
     # Clean up config flows in progress
     flows_to_remove = []
@@ -736,7 +748,7 @@ async def close_connections(hass, email: str) -> None:
     )
 
 
-async def update_listener(hass, config_entry):
+async def update_listener(hass: HomeAssistant, config_entry: AlexaConfigEntry) -> None:
     """Update when config_entry options update."""
     account = config_entry.data
     email = account.get(CONF_EMAIL)

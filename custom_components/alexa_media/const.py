@@ -59,7 +59,6 @@ CONF_SCAN_INTERVAL = (
 )
 CONF_TOTP_REGISTER = "registered"
 CONF_OAUTH = "oauth"
-DATA_LISTENER = "listener"
 
 EXCEPTION_TEMPLATE = "An exception of type {0} occurred. Arguments:\n{1!r}"
 
