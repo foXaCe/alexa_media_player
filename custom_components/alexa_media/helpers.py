@@ -565,7 +565,7 @@ def safe_get(
 
 def safe_get(
     data: Any, path_list: list[str | int] | None = None, *args, **kwargs
-) -> None | Any:
+) -> Any | None:
     """Safely get nested value using path segments with optional type checking.
 
     Args:
