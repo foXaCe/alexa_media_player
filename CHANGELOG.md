@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [5.18.1] - 2026-07-30
+
+### Changed
+
+- Update alexapy to 1.30.0 (#65) — validated live on Home Assistant 2026.7: login, two consecutive coordinator refreshes (`success: True`) and entity-state fetch all healthy, 37 entities intact, zero errors.
+- Dev/CI tooling bumps: ruff-pre-commit 0.16.0, commitizen 4.17.0, codespell 2.4.3, actions/setup-python v7, actions/stale v11 (#60–#68).
+
 ## [5.18.0] - 2026-07-02
 
 ### Added
