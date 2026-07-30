@@ -11,11 +11,23 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    CONCENTRATION_PARTS_PER_MILLION,
-    PERCENTAGE,
-)
+from homeassistant.const import PERCENTAGE
+
+try:
+    # HA >= 2026.7 groups these units into typed enums; using them avoids the
+    # deprecation warning emitted for the flat CONCENTRATION_* constants
+    # (removal planned for HA 2027.8).
+    from homeassistant.const import UnitOfDensity, UnitOfRatio
+
+    _UNIT_MICROGRAMS_PER_CUBIC_METER: str = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
+    _UNIT_PARTS_PER_MILLION: str = UnitOfRatio.PARTS_PER_MILLION
+except ImportError:
+    # HA < 2026.7 (the integration still supports down to 2025.2): the enums do
+    # not exist yet, and the flat constants are not deprecated there.
+    from homeassistant.const import (
+        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER as _UNIT_MICROGRAMS_PER_CUBIC_METER,
+        CONCENTRATION_PARTS_PER_MILLION as _UNIT_PARTS_PER_MILLION,
+    )
 
 PROJECT_URL = "https://github.com/foXaCe/alexa_media_player/"
 ISSUE_URL = f"{PROJECT_URL}issues"
@@ -231,8 +243,8 @@ AUTH_PROXY_NAME = "auth:alexamedia:proxy"
 
 ALEXA_UNIT_CONVERSION = {
     "Alexa.Unit.Percent": PERCENTAGE,
-    "Alexa.Unit.PartsPerMillion": CONCENTRATION_PARTS_PER_MILLION,
-    "Alexa.Unit.Density.MicroGramsPerCubicMeter": CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    "Alexa.Unit.PartsPerMillion": _UNIT_PARTS_PER_MILLION,
+    "Alexa.Unit.Density.MicroGramsPerCubicMeter": _UNIT_MICROGRAMS_PER_CUBIC_METER,
 }
 
 ALEXA_ICON_CONVERSION = {
