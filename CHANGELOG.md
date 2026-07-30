@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.18.2] - 2026-07-30
+
 ### Fixed
 
 - Silence the HA 2026.7 deprecation warnings for `CONCENTRATION_MICROGRAMS_PER_CUBIC_METER` / `CONCENTRATION_PARTS_PER_MILLION` (air-quality sensor units) by using `UnitOfDensity` / `UnitOfRatio` when available, with a fallback to the flat constants on HA < 2026.7 — so the warning is gone on 2026.7+ while support down to HA 2025.2 is preserved (the enums do not exist before 2026.7). Unit strings are byte-identical; no entity/state change.
