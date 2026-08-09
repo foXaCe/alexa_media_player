@@ -313,10 +313,16 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
         # devices -> N sequential _api_get_state calls during boot). Deferring
         # lets all entities be added instantly and refresh concurrently; the
         # state populates within ~a second instead of blocking setup_entry.
-        self._initial_refresh_task = self.hass.async_create_background_task(
-            self.refresh(self._device),
-            f"{ALEXA_DOMAIN}_initial_refresh_{self._device_serial_number}",
-        )
+        # Only defer when the session is already authenticated: during the
+        # fully-optimistic boot the login probe runs in the background, so
+        # refreshing now would hit an unauthenticated session (every call
+        # redirects to /ap/signin). The coordinator's first refresh, which
+        # runs right after login, populates the state instead.
+        if self._login.status.get("login_successful"):
+            self._initial_refresh_task = self.hass.async_create_background_task(
+                self.refresh(self._device),
+                f"{ALEXA_DOMAIN}_initial_refresh_{self._device_serial_number}",
+            )
 
     async def async_will_remove_from_hass(self):
         """Prepare to remove entity."""
@@ -851,6 +857,16 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
         session = None
         api_call = False
         refresh_generation = self._refresh_generation
+        # During the fully-optimistic boot the login probe runs in the
+        # background: an unauthenticated session would redirect every API call
+        # to /ap/signin (wasted round-trips + slow boot). Degrade to the
+        # metadata-only refresh until the session is confirmed.
+        if not skip_api and not self._login.status.get("login_successful"):
+            _LOGGER.debug(
+                "%s: Skipping API refresh (session not authenticated yet)",
+                self.account,
+            )
+            skip_api = True
         if self.available:
             _LOGGER.debug(
                 "%s: Refreshing %s",
@@ -877,8 +893,9 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                 ][self._login.email]["last_called"].get("response")
                 _LOGGER.debug("[refresh] Updating notify targets")
                 await self._update_notify_targets()
-            if skip_api and self.hass:
-                self.schedule_update_ha_state()
+            if skip_api:
+                if self.hass:
+                    self.schedule_update_ha_state()
                 return
             if "MUSIC_SKILL" in self._capabilities:
                 if self._parent_clusters and self.hass:
