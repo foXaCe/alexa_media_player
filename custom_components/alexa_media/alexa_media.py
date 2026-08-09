@@ -26,7 +26,11 @@ class AlexaMedia:
 
         # Class info
         self._login = login
-        self._device = device
+        # The object AlexaAPI expects as its `device` argument (the AlexaClient
+        # instance on media_player/switch, None on alarm_control_panel). Stored
+        # under a name subclasses do not override (`self._device` is repurposed
+        # by AlexaClient to hold the raw device dict).
+        self._api_device = device
         self.email = login.email
         self.account = hide_email(login.email)
         self._alexa_api: AlexaAPI | None = None
@@ -42,7 +46,7 @@ class AlexaMedia:
         gated on login success in ``refresh()``).
         """
         if self._alexa_api is None:
-            self._alexa_api = AlexaAPI(self._device, self._login)
+            self._alexa_api = AlexaAPI(self._api_device, self._login)
         return self._alexa_api
 
     @alexa_api.setter
