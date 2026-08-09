@@ -41,7 +41,6 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import UnknownFlow
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.loader import async_get_integration
@@ -392,69 +391,144 @@ async def async_setup_entry(
     config_entry.async_on_unload(
         hass.bus.async_listen(EVENT_RELOGIN_SUCCESS, login_success)
     )
-    try:
-        _t = time.monotonic()
-        # Pass the raw cookies from alexapy's own loader straight to login(), like
-        # upstream. The fork used to flatten them to {name: value} and preload the
-        # aiohttp jar from the on-disk file first; that corrupted the session, so
-        # login(cookies=...) produced an UNauthenticated session and every API
-        # call bounced to /ap/signin ("Expecting value: line 1 column 1").
-        cookies = await login.load_cookie()
-        cookie_login_ok = False
-        if cookies:
+    # Build the shared setup context + coordinator BEFORE restoring the snapshot:
+    # the platform setups triggered by async_forward_entry_setups (temperature
+    # sensors, switches, ...) read account["coordinator"] during entity creation.
+    metrics = get_metrics(hass)
+    debug = bool(account.get(CONF_DEBUG, False))
+    ctx = SetupContext(
+        hass=hass,
+        config_entry=config_entry,
+        email=email,
+        debug=debug,
+        metrics=metrics,
+        login_obj=login,
+    )
+    scan_interval: float = (
+        account.get(CONF_SCAN_INTERVAL).total_seconds()
+        if isinstance(account.get(CONF_SCAN_INTERVAL), timedelta)
+        else account.get(CONF_SCAN_INTERVAL)
+    )
+    ctx.scan_interval = scan_interval
+    runtime_data = getattr(config_entry, "runtime_data", None)
+    account_data = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
+    coordinator = AlexaMediaCoordinator(
+        hass=hass,
+        runtime_data=runtime_data,
+        update_method=functools.partial(setup_coordinator_data.async_update_data, ctx),
+        scan_interval=scan_interval,
+    )
+    account_data["coordinator"] = coordinator
+    if runtime_data:
+        runtime_data.coordinator = coordinator
+
+    # Restore the persisted device snapshot FIRST so entities appear instantly,
+    # independent of the Amazon login-probe latency on this network. The probe
+    # then runs in the background and only finishes the real setup once auth is
+    # confirmed (or triggers the existing reauth flow otherwise).
+    restored = await _restore_device_snapshot(hass, config_entry, email)
+    if metrics:
+        metrics.record_boot_stage(f"platforms_loaded_{hide_email(email)}")
+
+    async def _background_login_and_setup() -> None:
+        """Validate the cached session, then run the real setup in the background."""
+        try:
+            _t = time.monotonic()
+            # Pass the raw cookies from alexapy's own loader straight to
+            # login(), like upstream. The fork used to flatten them to
+            # {name: value} and preload the aiohttp jar from the on-disk file
+            # first; that corrupted the session, so login(cookies=...) produced
+            # an UNauthenticated session and every API call bounced to
+            # /ap/signin ("Expecting value: line 1 column 1").
+            cookies = await login.load_cookie()
+            cookie_login_ok = False
+            if cookies:
+                try:
+                    if login._session is None or getattr(
+                        login._session, "closed", False
+                    ):
+                        login._create_session(True)
+                    # Account's regional Alexa host (e.g. alexa.amazon.fr), not a
+                    # hardcoded alexa.amazon.com, so non-US accounts get the fast path.
+                    async with login._session.get(
+                        f"https://alexa.{login.url}/api/bootstrap",
+                        cookies=cookies,
+                        ssl=login._ssl,
+                        allow_redirects=False,
+                    ) as response:
+                        if response.status == 200:
+                            data = loads(await response.text())
+                            auth = (data or {}).get("authentication") or {}
+                            customer_email = (auth.get("customerEmail") or "").lower()
+                            if (
+                                auth.get("authenticated")
+                                and customer_email == email.lower()
+                            ):
+                                _LOGGER.debug(
+                                    "[BOOT] Cookie auth confirmed via /api/bootstrap"
+                                )
+                                login.status["login_successful"] = True
+                                login.customer_id = auth.get("customerId")
+                                login.stats["login_timestamp"] = datetime.now()
+                                login.stats["api_calls"] = 0
+                                await login.check_domain()
+                                await login.finalize_login()
+                                cookie_login_ok = True
+                except (JSONDecodeError, ValueError, aiohttp.ClientError) as ex:
+                    _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
+            if not cookie_login_ok:
+                await login.login(cookies=cookies)
+            _LOGGER.debug("[BOOT] login completed in %.2fs", time.monotonic() - _t)
+            _t = time.monotonic()
+            if await test_login_status(hass, config_entry, login):
+                _LOGGER.debug(
+                    "[BOOT] test_login_status in %.2fs", time.monotonic() - _t
+                )
+                await setup_alexa(
+                    hass,
+                    config_entry,
+                    login,
+                    snapshot_restored=restored,
+                    ctx=ctx,
+                )
+                _LOGGER.debug(
+                    "[BOOT] setup (background) total: %.2fs",
+                    time.monotonic() - _boot_start,
+                )
+            # else: test_login_status already started the custom reauth flow
+            # (persistent notification + async_start_reauth); the entities stay
+            # on their snapshot data until reauth completes.
+        except AlexapyConnectionError as err:
+            # Network hiccup on the probe: keep the optimistic entities and run
+            # the setup anyway — the coordinator's first refresh will retry.
+            _LOGGER.warning("Background login failed (%s); continuing setup", err)
             try:
-                if login._session is None or getattr(login._session, "closed", False):
-                    login._create_session(True)
-                # Account's regional Alexa host (e.g. alexa.amazon.fr), not a
-                # hardcoded alexa.amazon.com, so non-US accounts get the fast path.
-                async with login._session.get(
-                    f"https://alexa.{login.url}/api/bootstrap",
-                    cookies=cookies,
-                    ssl=login._ssl,
-                    allow_redirects=False,
-                ) as response:
-                    if response.status == 200:
-                        data = loads(await response.text())
-                        auth = (data or {}).get("authentication") or {}
-                        customer_email = (auth.get("customerEmail") or "").lower()
-                        if (
-                            auth.get("authenticated")
-                            and customer_email == email.lower()
-                        ):
-                            _LOGGER.debug(
-                                "[BOOT] Cookie auth confirmed via /api/bootstrap"
-                            )
-                            login.status["login_successful"] = True
-                            login.customer_id = auth.get("customerId")
-                            login.stats["login_timestamp"] = datetime.now()
-                            login.stats["api_calls"] = 0
-                            await login.check_domain()
-                            await login.finalize_login()
-                            cookie_login_ok = True
-            except (JSONDecodeError, ValueError, aiohttp.ClientError) as ex:
-                _LOGGER.debug("[BOOT] Bootstrap cookie auth check failed: %s", ex)
-        if not cookie_login_ok:
-            await login.login(cookies=cookies)
-        _LOGGER.debug("[BOOT] login completed in %.2fs", time.monotonic() - _t)
-        _t = time.monotonic()
-        if await test_login_status(hass, config_entry, login):
-            _LOGGER.debug("[BOOT] test_login_status in %.2fs", time.monotonic() - _t)
-            await setup_alexa(hass, config_entry, login)
-            _LOGGER.debug(
-                "[BOOT] setup_entry total: %.2fs", time.monotonic() - _boot_start
-            )
-            return True
-        # test_login_status already started the custom reauth flow (with its
-        # persistent notification); raising marks the entry as auth-failed in
-        # the UI instead of a generic setup error. HA's own async_start_reauth
-        # is a no-op while that flow is in progress.
-        raise ConfigEntryAuthFailed(f"Login failed for {hide_email(email)}")
-    except AlexapyConnectionError as err:
-        raise ConfigEntryNotReady(str(err) or "Connection Error during login") from err
+                await setup_alexa(
+                    hass,
+                    config_entry,
+                    login,
+                    snapshot_restored=restored,
+                    ctx=ctx,
+                )
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Background setup failed after login error")
+
+    hass.async_create_background_task(
+        _background_login_and_setup(), f"{DOMAIN}_login_setup_{hide_email(email)}"
+    )
+    _LOGGER.debug(
+        "[BOOT] setup_entry returned after %.2fs (optimistic, no Amazon round-trip)",
+        time.monotonic() - _boot_start,
+    )
+    return True
 
 
 async def setup_alexa(
-    hass: HomeAssistant, config_entry: AlexaConfigEntry, login_obj: AlexaLogin
+    hass: HomeAssistant,
+    config_entry: AlexaConfigEntry,
+    login_obj: AlexaLogin,
+    snapshot_restored: bool = False,
+    ctx: SetupContext | None = None,
 ) -> bool:
     # pylint: disable=too-many-statements,too-many-locals
     """Set up a alexa api based on host parameter."""
@@ -469,14 +543,17 @@ async def setup_alexa(
 
     # Shared per-entry state for the extracted setup/ helpers (DND throttling, ...).
     # Recreated on every (re)login, matching the previous closure-based behaviour.
-    ctx = SetupContext(
-        hass=hass,
-        config_entry=config_entry,
-        email=email,
-        debug=debug,
-        metrics=metrics,
-        login_obj=login_obj,
-    )
+    # async_setup_entry passes its own ctx (and the coordinator created from it)
+    # on the optimistic boot path so the platform setups share the same state.
+    if ctx is None:
+        ctx = SetupContext(
+            hass=hass,
+            config_entry=config_entry,
+            email=email,
+            debug=debug,
+            metrics=metrics,
+            login_obj=login_obj,
+        )
 
     # ---------------------------------------------------------------------
     # Near-real-time last_called probing (customer history), single worker
@@ -558,12 +635,14 @@ async def setup_alexa(
     # entities from it right now and run the real first refresh in the
     # background — the boot path then contains zero Amazon round-trips beyond
     # the login probe. Without a snapshot (first setup) the classic blocking
-    # first refresh runs.
-    restored = await _restore_device_snapshot(hass, config_entry, email)
+    # first refresh runs. When async_setup_entry already restored the snapshot
+    # (optimistic login), it is not restored a second time.
+    if snapshot_restored:
+        restored = True
+    else:
+        restored = await _restore_device_snapshot(hass, config_entry, email)
 
     if restored:
-        if metrics:
-            metrics.record_boot_stage(f"platforms_loaded_{hide_email(email)}")
         account_data["boot_refresh_task"] = hass.async_create_background_task(
             _async_finish_optimistic_boot(
                 hass,

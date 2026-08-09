@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- Fully optimistic config-entry setup: the persisted device snapshot is now restored and all platforms forwarded **before** the Amazon login probe, which runs in the background. The boot path contains zero Amazon round-trips — entities appear instantly (measured `setup_entry` ~2.3s on HA dev, dominated by HA-wide platform-setup contention) and the login validation, coordinator first refresh and HTTP/2 connect all complete in the background. This removes the network-latency sensitivity of the boot (on a slow-WAN install the previous setup waited the full login-probe round-trip). Auth failures still trigger the existing reauth flow; network hiccups degrade to a best-effort setup with the coordinator retrying. The shared `SetupContext`/coordinator are built before the snapshot restore so platform setups always find a coordinator.
+
 ## [5.18.3] - 2026-08-09
 
 ### Changed
