@@ -1,0 +1,9 @@
+# Development / tooling dependencies.
+# Lint, format and type-check settings live in pyproject.toml (tool.ruff / tool.mypy).
+-r requirements_test.txt
+
+# Lint / format
+ruff>=0.15
+
+# Static type checking (non-blocking in CI; tighten incrementally)
+mypy>=1.13

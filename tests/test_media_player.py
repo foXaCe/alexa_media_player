@@ -282,7 +282,7 @@ def _ready_client():
     def _consume(coro, *args, **kwargs):
         try:
             coro.close()
-        except (AttributeError, RuntimeError):
+        except AttributeError, RuntimeError:
             pass
         return MagicMock()
 

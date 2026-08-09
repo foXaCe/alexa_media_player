@@ -55,7 +55,7 @@ def redact_sensitive(data: Any) -> Any:
     """
     try:
         return async_redact_data(obfuscate(data), TO_REDACT)
-    except (TypeError, ValueError, AttributeError):
+    except TypeError, ValueError, AttributeError:
         # Fall back to alexapy's obfuscation if the structure is unexpected.
         return obfuscate(data)
 

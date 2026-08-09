@@ -526,7 +526,7 @@ async def http2_handler(ctx: SetupContext, message_obj):
                 if isinstance(resource, dict) and "payload" in resource
                 else None
             )
-        except (JSONDecodeError, TypeError):
+        except JSONDecodeError, TypeError:
             _LOGGER.debug(
                 "%s: Skipping malformed push payload for command %s",
                 hide_email(email),
