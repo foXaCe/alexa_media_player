@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [
@@ -28,7 +28,7 @@ combine-as-imports = true
 force-sort-within-sections = true
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 # The historical code base is largely untyped; keep mypy non-blocking
 # (matches the previous Poetry config) so CI stays green. Tighten incrementally.
 ignore_errors = true
