@@ -330,6 +330,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
             try:
                 await task
             except asyncio.CancelledError:
+                # Cancellation is the intended outcome on entity removal.
                 pass
 
     async def _handle_event(self, event):
