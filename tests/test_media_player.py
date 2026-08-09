@@ -283,6 +283,7 @@ def _ready_client():
         try:
             coro.close()
         except AttributeError, RuntimeError:
+            # Coroutine may already be closed or a mock — nothing to do.
             pass
         return MagicMock()
 

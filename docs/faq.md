@@ -31,4 +31,5 @@ limits. Space out commands and avoid rapid bursts.
 This project replicates the Alexa app's behaviour through the unofficial API. Amazon
 may change or block it at any time; that is an inherent limitation of the approach.
 
-For anything else, see the [FAQ wiki page](https://github.com/foXaCe/alexa_media_player/wiki/FAQ).
+For anything else, open an [issue](https://github.com/foXaCe/alexa_media_player/issues)
+with the relevant logs and diagnostics.

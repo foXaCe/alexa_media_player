@@ -12,13 +12,29 @@ MANIFEST=custom_components/alexa_media/manifest.json
 
 command -v jq >/dev/null 2>&1 || { echo "jq is required"; exit 1; }
 
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+    echo "Releases must be cut from the 'main' branch (current: ${CURRENT_BRANCH})" >&2
+    exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Release requires a clean working tree (uncommitted changes present)" >&2
+    exit 1
+fi
+
 jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > "$MANIFEST.tmp"
 mv "$MANIFEST.tmp" "$MANIFEST"
 
 git add "$MANIFEST"
-git commit -m "release: v${NEW_VERSION}"
+git commit --only "$MANIFEST" -m "release: v${NEW_VERSION}"
 git tag "v${NEW_VERSION}"
-git push origin main
-git push origin "v${NEW_VERSION}"
+
+# Push branch + tag atomically so the release refs cannot split on failure.
+if ! git push --atomic origin main "v${NEW_VERSION}" 2>/dev/null; then
+    echo "Atomic push unsupported; falling back to sequential pushes" >&2
+    git push origin main
+    git push origin "v${NEW_VERSION}"
+fi
 
 echo "Released v${NEW_VERSION} — publish the release on GitHub to attach the zip."
