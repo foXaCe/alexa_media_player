@@ -573,7 +573,7 @@ async def get_entity_data(
                     for cap_state in cap_states:
                         try:
                             entities[entity_id].append(json.loads(cap_state))
-                        except (json.JSONDecodeError, TypeError):
+                        except json.JSONDecodeError, TypeError:
                             _LOGGER.debug(
                                 "Skipping malformed capability state for %s",
                                 entity_id,

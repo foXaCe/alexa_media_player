@@ -20,6 +20,10 @@ repos:
       - id: trailing-whitespace
       - id: check-merge-conflict
       - id: debug-statements
+        # The project targets Python 3.14 (HA core requires-python >=3.14.2);
+        # ruff-format (target py314) drops the parens of `except A, B:` clauses,
+        # which older interpreters cannot parse. Parse with the project runtime.
+        language_version: python3.14
       - id: check-toml
       - id: check-json
         exclude: >

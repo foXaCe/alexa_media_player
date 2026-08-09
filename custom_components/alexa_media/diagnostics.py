@@ -64,12 +64,12 @@ def _maybe_keys(val: Any, limit: int = 50) -> list[str] | None:
                         )
 
                         return hide_email(s)
-                    except (ImportError, AttributeError, TypeError, ValueError):
+                    except ImportError, AttributeError, TypeError, ValueError:
                         pass
                 return _obfuscate_identifier(s)
 
             return sorted(_safe_key(k) for k in islice(val.keys(), limit))
-        except (TypeError, AttributeError):
+        except TypeError, AttributeError:
             return None
     return None
 
@@ -129,15 +129,15 @@ def _find_coordinators(obj: Any) -> list[DataUpdateCoordinator]:
                 for f in fields(x):
                     try:
                         walk(getattr(x, f.name))
-                    except (AttributeError, TypeError, ValueError):
+                    except AttributeError, TypeError, ValueError:
                         # Skip fields that can't be read safely
                         pass
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 # Fallback: vars() can work for some dataclass/slots variations
                 try:
                     for v in vars(x).values():
                         walk(v)
-                except (AttributeError, TypeError, ValueError):
+                except AttributeError, TypeError, ValueError:
                     # Ignore attributes that cannot be introspected via vars()
                     pass
             return
@@ -294,7 +294,7 @@ def _obfuscate_title_with_email(title: str | None, email: str | None) -> str | N
         from alexapy import hide_email  # pylint: disable=import-outside-toplevel
 
         redacted = hide_email(email)
-    except (ImportError, AttributeError, TypeError, ValueError):
+    except ImportError, AttributeError, TypeError, ValueError:
         redacted = _obfuscate_identifier(email)
 
     return title.replace(email, redacted)
@@ -416,7 +416,7 @@ async def async_get_device_diagnostics(
         from alexapy import hide_serial  # pylint: disable=import-outside-toplevel
 
         safe_serial = hide_serial(device.serial_number)
-    except (ImportError, AttributeError, TypeError, ValueError):
+    except ImportError, AttributeError, TypeError, ValueError:
         safe_serial = _obfuscate_identifier(device.serial_number)
 
     data: dict = {

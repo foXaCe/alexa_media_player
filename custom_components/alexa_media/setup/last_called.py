@@ -74,7 +74,7 @@ def _queue_last_called_activity(
 
     try:
         ts = int(activity_ts) if activity_ts is not None else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         ts = 0
 
     queue: list[dict] = account.setdefault("last_called_activity_queue", [])
@@ -157,7 +157,7 @@ def _select_last_called_payload_from_records(
     def _record_ts(record: dict) -> int:
         try:
             return int(record.get("creationTimestamp") or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return 0
 
     sorted_records = sorted(
@@ -180,7 +180,7 @@ def _select_last_called_payload_from_records(
 
         try:
             ts = int(record.get("creationTimestamp") or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
         if ts <= watermark:
@@ -240,7 +240,7 @@ def _store_and_dispatch_last_called(
     ts_raw = payload.get("timestamp")
     try:
         ts = int(ts_raw or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         ts = 0
 
     if 0 < ts < 10_000_000_000:
@@ -884,7 +884,7 @@ def _init_last_called_probe_worker(ctx: SetupContext, account: dict) -> None:
         if trigger_ts_ms is not None:
             try:
                 ts = int(trigger_ts_ms)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 ts = 0
 
             prev = int(account_live.get("last_called_probe_trigger_ts") or 0)

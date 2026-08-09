@@ -189,7 +189,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
         for component in DEPENDENT_ALEXA_COMPONENTS:
             try:
                 entry_setup = len(account_dict["entities"][component])
-            except (TypeError, KeyError):
+            except TypeError, KeyError:
                 entry_setup = 1
             if entry_setup or component == "notify":
                 _LOGGER.debug("%s: Loading %s", hide_email(account), component)
@@ -1084,7 +1084,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                     ]["serialNumber"]
                 )
             )
-        except (TypeError, KeyError):
+        except TypeError, KeyError:
             last_called_serial = None
         _LOGGER.debug(
             "%s: %s: Last_called check: self: %s; reported: %s",

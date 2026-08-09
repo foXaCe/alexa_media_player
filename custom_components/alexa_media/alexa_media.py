@@ -35,7 +35,7 @@ class AlexaMedia:
         # _LOGGER.debug("Checking if Login object has changed")
         try:
             login = self.hass.data[DATA_ALEXAMEDIA]["accounts"][self.email]["login_obj"]
-        except (AttributeError, KeyError):
+        except AttributeError, KeyError:
             return
         # _LOGGER.debug("Login object %s closed status: %s", login, login.session.closed)
         # _LOGGER.debug(

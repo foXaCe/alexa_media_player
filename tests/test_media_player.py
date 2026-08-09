@@ -282,7 +282,8 @@ def _ready_client():
     def _consume(coro, *args, **kwargs):
         try:
             coro.close()
-        except (AttributeError, RuntimeError):
+        except AttributeError, RuntimeError:
+            # Coroutine may already be closed or a mock — nothing to do.
             pass
         return MagicMock()
 

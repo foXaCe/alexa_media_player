@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Launches Home Assistant locally with the integration mounted from source.
+# A `config/` directory is created on first run (gitignored).
+exec python -m homeassistant --debug -c config
