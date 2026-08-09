@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- Faster platform import during boot: `media_source` (a heavy HA component, ~0.8s to import on its own) and `async_process_play_media_url` are now lazily imported inside `async_play_tts_cloud_say` instead of at module load. The `alexa_media.media_player` platform module now imports in ~0.02s, which matters on large HA installs where platform imports are serialized behind a global lock (measured `platforms_loaded` ~1.7s on HA dev).
+
 ## [5.18.5] - 2026-08-09
 
 ### Fixed

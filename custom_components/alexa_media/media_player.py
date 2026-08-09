@@ -19,11 +19,7 @@ from typing import Any
 import urllib.request
 
 from homeassistant import util
-from homeassistant.components import media_source
 from homeassistant.components.media_player import MediaPlayerEntity
-from homeassistant.components.media_player.browse_media import (
-    async_process_play_media_url,
-)
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_ANNOUNCE,
     MediaPlayerEntityFeature,
@@ -1776,6 +1772,14 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
 
     @_catch_login_errors
     async def async_play_tts_cloud_say(self, public_url, media_id, **kwargs):
+        # Lazily imported: media_source is a heavy HA component only needed for
+        # the TTS path; keeping it out of the module imports speeds up the
+        # platform import during boot (large HA installs serialize imports).
+        from homeassistant.components import media_source
+        from homeassistant.components.media_player.browse_media import (
+            async_process_play_media_url,
+        )
+
         file_name = media_id
         if media_source.is_media_source_id(media_id):
             media = await media_source.async_resolve_media(
