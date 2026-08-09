@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from alexapy import AlexaAPI, hide_email
+from alexapy import AlexaAPI, AlexaLogin, hide_email
 
 from .const import DATA_ALEXAMEDIA
 
@@ -50,9 +50,10 @@ class AlexaMedia:
         """Allow replacing the API handle (tests, relogin)."""
         self._alexa_api = value
         # Keep the wrapper's base login state in sync when the handle is
-        # swapped for a real API object bound to a (different) login.
+        # swapped for a real API object bound to a (different) login. Mocks
+        # (tests) and None are left untouched.
         login = getattr(value, "_login", None)
-        if login is not None:
+        if isinstance(login, AlexaLogin):
             self._login = login
             self.email = login.email
             self.account = hide_email(login.email)
