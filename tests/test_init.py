@@ -26,8 +26,6 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
 )
 from homeassistant.data_entry_flow import UnknownFlow
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-import pytest
 
 import custom_components.alexa_media as amp
 from custom_components.alexa_media.const import (
@@ -159,7 +157,27 @@ def _setup_entry_patches(login, *, setup_alexa=None, test_login=None, index=0):
         ),
         patch(f"{_PKG}.setup_alexa", setup_alexa or AsyncMock(return_value=True)),
         patch(f"{_PKG}.test_login_status", test_login or AsyncMock(return_value=True)),
+        # No persisted device snapshot in these orchestration tests.
+        patch(f"{_PKG}._restore_device_snapshot", AsyncMock(return_value=False)),
     ]
+
+
+@contextlib.contextmanager
+def _capture_background_tasks(hass):
+    """Capture background-task coroutines instead of closing them.
+
+    ``async_setup_entry`` now runs the login probe + real setup in a background
+    task; tests await the captured coroutine to exercise that path.
+    """
+
+    scheduled: list = []
+
+    def _capture(coro, name=None):
+        scheduled.append(coro)
+        return MagicMock()
+
+    hass.async_create_background_task = MagicMock(side_effect=_capture)
+    yield scheduled
 
 
 # --------------------------------------------------------------------------- #
@@ -237,11 +255,16 @@ async def test_async_setup_entry_cookie_path_fails_falls_back_to_login():
     )
     login = _make_login()
     setup_alexa = AsyncMock(return_value=True)
-    with _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)):
+    with (
+        _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)),
+        _capture_background_tasks(hass) as scheduled,
+    ):
         result = await amp.async_setup_entry(hass, entry)
+        for coro in scheduled:
+            await coro
 
     assert result is True
-    # Bootstrap probe raised -> a full credential login is performed.
+    # Bootstrap probe raised -> a full credential login is performed (background).
     login.login.assert_awaited_once()
     setup_alexa.assert_awaited_once()
     account = hass.data[DATA_ALEXAMEDIA]["accounts"][EMAIL]
@@ -275,8 +298,13 @@ async def test_async_setup_entry_cookie_bootstrap_success_skips_login():
     response.text = AsyncMock(return_value=_BOOTSTRAP_OK)
     login._session.get = MagicMock(return_value=_AsyncCM(response))
     setup_alexa = AsyncMock(return_value=True)
-    with _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)):
+    with (
+        _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)),
+        _capture_background_tasks(hass) as scheduled,
+    ):
         result = await amp.async_setup_entry(hass, entry)
+        for coro in scheduled:
+            await coro
 
     assert result is True
     # Cookie auth confirmed via /api/bootstrap -> no full login.
@@ -298,14 +326,19 @@ async def test_async_setup_entry_recreates_closed_session():
     # Cached cookies present -> the probe path runs and recreates the closed session.
     login.load_cookie = AsyncMock(return_value={"session-id": "x"})
     login._session.closed = True  # forces login._create_session(True)
-    with _applied(_setup_entry_patches(login)):
+    with (
+        _applied(_setup_entry_patches(login)),
+        _capture_background_tasks(hass) as scheduled,
+    ):
         result = await amp.async_setup_entry(hass, entry)
+        for coro in scheduled:
+            await coro
 
     assert result is True
     login._create_session.assert_called_once_with(True)
 
 
-async def test_async_setup_entry_raises_auth_failed_when_login_status_false():
+async def test_async_setup_entry_auth_failure_triggers_reauth_not_exception():
     hass = _make_hass()
     entry = _make_config_entry(
         data={CONF_EMAIL: EMAIL, CONF_PASSWORD: "pw", CONF_URL: URL},
@@ -313,20 +346,27 @@ async def test_async_setup_entry_raises_auth_failed_when_login_status_false():
     )
     login = _make_login()
     setup_alexa = AsyncMock(return_value=True)
-    with _applied(
-        _setup_entry_patches(
-            login,
-            setup_alexa=setup_alexa,
-            test_login=AsyncMock(return_value=False),
-        )
+    with (
+        _applied(
+            _setup_entry_patches(
+                login,
+                setup_alexa=setup_alexa,
+                test_login=AsyncMock(return_value=False),
+            )
+        ),
+        _capture_background_tasks(hass) as scheduled,
     ):
-        with pytest.raises(ConfigEntryAuthFailed):
-            await amp.async_setup_entry(hass, entry)
+        # Optimistic boot: setup_entry returns True immediately; auth is
+        # validated in the background (test_login_status handles the reauth).
+        result = await amp.async_setup_entry(hass, entry)
+        for coro in scheduled:
+            await coro
 
+    assert result is True
     setup_alexa.assert_not_awaited()
 
 
-async def test_async_setup_entry_connection_error_raises_not_ready():
+async def test_async_setup_entry_connection_error_continues_setup():
     hass = _make_hass()
     entry = _make_config_entry(
         data={CONF_EMAIL: EMAIL, CONF_PASSWORD: "pw", CONF_URL: URL},
@@ -334,11 +374,19 @@ async def test_async_setup_entry_connection_error_raises_not_ready():
     )
     login = _make_login()
     login.load_cookie = AsyncMock(side_effect=AlexapyConnectionError("boom"))
+    setup_alexa = AsyncMock(return_value=True)
     with (
-        _applied(_setup_entry_patches(login)),
-        pytest.raises(ConfigEntryNotReady),
+        _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)),
+        _capture_background_tasks(hass) as scheduled,
     ):
-        await amp.async_setup_entry(hass, entry)
+        result = await amp.async_setup_entry(hass, entry)
+        for coro in scheduled:
+            await coro
+
+    # No ConfigEntryNotReady: the entry is already loaded optimistically and the
+    # background probe degrades to a best-effort setup (coordinator retries).
+    assert result is True
+    setup_alexa.assert_awaited_once()
 
 
 async def test_async_setup_entry_second_account_skips_stop_listener():
@@ -370,11 +418,14 @@ async def test_async_setup_entry_listener_callbacks_execute():
     setup_alexa = AsyncMock(return_value=True)
     with (
         _applied(_setup_entry_patches(login, setup_alexa=setup_alexa)),
+        _capture_background_tasks(hass) as scheduled,
         patch(f"{_PKG}.close_connections", AsyncMock()) as close_conns,
         patch("asyncio.sleep", AsyncMock()),
     ):
         result = await amp.async_setup_entry(hass, entry)
         assert result is True
+        for coro in scheduled:
+            await coro  # background login probe + initial setup_alexa
 
         once = {c.args[0]: c.args[1] for c in hass.bus.async_listen_once.call_args_list}
         listen = {c.args[0]: c.args[1] for c in hass.bus.async_listen.call_args_list}
