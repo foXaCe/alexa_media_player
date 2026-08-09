@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Manual release flow (see CONTRIBUTING.md): bump manifest.json version,
+# commit, tag and push. A GitHub release triggers the release.yml workflow
+# which attaches the integration zip.
+#
+# Usage: scripts/release <X.Y.Z>
+
+NEW_VERSION="${1:?Usage: scripts/release <X.Y.Z>}"
+MANIFEST=custom_components/alexa_media/manifest.json
+
+command -v jq >/dev/null 2>&1 || { echo "jq is required"; exit 1; }
+
+jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > "$MANIFEST.tmp"
+mv "$MANIFEST.tmp" "$MANIFEST"
+
+git add "$MANIFEST"
+git commit -m "release: v${NEW_VERSION}"
+git tag "v${NEW_VERSION}"
+git push origin main
+git push origin "v${NEW_VERSION}"
+
+echo "Released v${NEW_VERSION} — publish the release on GitHub to attach the zip."
