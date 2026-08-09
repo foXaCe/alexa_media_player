@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [5.18.4] - 2026-08-09
 
 ### Changed
 
