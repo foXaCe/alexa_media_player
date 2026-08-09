@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- Pre-import the platform modules (media_player + dependents) in the background during domain setup, so `async_forward_entry_setups` no longer waits behind HA's global platform-import lock during boot on large installs (measured `setup_entry` ~0.06s on HA dev, was ~1.7-2.3s).
+
 ## [5.18.6] - 2026-08-09
 
 ### Changed

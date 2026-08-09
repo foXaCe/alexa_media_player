@@ -213,7 +213,31 @@ async def async_setup(hass, config):
         await alexa_services.register()
         hass.data[DOMAIN]["services"] = alexa_services
 
+    # Pre-import the platform modules in the background so async_forward_entry_setups
+    # (run during entry setup) does not wait behind HA's global platform-import lock,
+    # which serialises hundreds of imports on large installs during boot.
+    hass.async_create_background_task(
+        _prewarm_platforms(hass), f"{DOMAIN}_prewarm_platforms"
+    )
+
     return True
+
+
+async def _prewarm_platforms(hass: HomeAssistant) -> None:
+    """Import the platform modules early so the boot path does not wait on them."""
+
+    import importlib
+
+    components = ("media_player", *DEPENDENT_ALEXA_COMPONENTS)
+    await asyncio.gather(
+        *(
+            hass.async_add_executor_job(
+                importlib.import_module, f"{__name__}.{component}"
+            )
+            for component in components
+        ),
+        return_exceptions=True,
+    )
 
 
 async def async_setup_entry(
