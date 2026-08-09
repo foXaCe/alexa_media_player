@@ -49,6 +49,13 @@ class AlexaMedia:
     def alexa_api(self, value: AlexaAPI) -> None:
         """Allow replacing the API handle (tests, relogin)."""
         self._alexa_api = value
+        # Keep the wrapper's base login state in sync when the handle is
+        # swapped for a real API object bound to a (different) login.
+        login = getattr(value, "_login", None)
+        if login is not None:
+            self._login = login
+            self.email = login.email
+            self.account = hide_email(login.email)
 
     def check_login_changes(self):
         """Update Login object if it has changed."""
