@@ -1164,9 +1164,14 @@ async def test_async_added_to_hass_connects_dispatcher():
         return_value=listener,
     ) as mock_connect:
         await client.async_added_to_hass()
-    client.refresh.assert_awaited_once()
     mock_connect.assert_called_once()
     assert client._listener is listener
+    # The initial refresh is deferred to a background task so the boot path
+    # does not serialize one API round-trip per entity.
+    client.hass.async_create_background_task.assert_called_once()
+    coro = client.hass.async_create_background_task.call_args[0][0]
+    await coro
+    client.refresh.assert_awaited_once()
 
 
 async def test_async_will_remove_from_hass_disconnects():

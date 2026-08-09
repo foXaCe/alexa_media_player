@@ -302,11 +302,19 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
     async def async_added_to_hass(self):
         """Perform tasks after loading."""
         # Register event handler on bus
-        await self.refresh(self._device)
         self._listener = async_dispatcher_connect(
             self.hass,
             f"{ALEXA_DOMAIN}_{hide_email(self._login.email)}"[0:32],
             self._handle_event,
+        )
+        # Initial refresh in the background: awaiting it here serializes one
+        # Amazon API round-trip per entity on the platform-setup path (N
+        # devices -> N sequential _api_get_state calls during boot). Deferring
+        # lets all entities be added instantly and refresh concurrently; the
+        # state populates within ~a second instead of blocking setup_entry.
+        self.hass.async_create_background_task(
+            self.refresh(self._device),
+            f"{ALEXA_DOMAIN}_initial_refresh_{self._device_serial_number}",
         )
 
     async def async_will_remove_from_hass(self):
