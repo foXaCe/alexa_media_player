@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Faster config-entry setup (measured `setup_entry` 4.15s → ~1.9s on HA dev, ~55%): the initial per-entity refresh in `AlexaClient.async_added_to_hass` no longer awaits one Amazon API round-trip per media player on the platform-setup path. It now runs in a background task, so all entities are added instantly and refresh concurrently; media-player state populates ~1s later instead of blocking boot.
+
 ## [5.18.2] - 2026-07-30
 
 ### Fixed

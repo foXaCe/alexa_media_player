@@ -252,6 +252,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
         self._locale = None
         # Media
         self._session = None
+        self._refresh_generation = 0
         self._media_duration = None
         self._media_image_url = None
         self._media_title = None
@@ -302,17 +303,35 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
     async def async_added_to_hass(self):
         """Perform tasks after loading."""
         # Register event handler on bus
-        await self.refresh(self._device)
         self._listener = async_dispatcher_connect(
             self.hass,
             f"{ALEXA_DOMAIN}_{hide_email(self._login.email)}"[0:32],
             self._handle_event,
         )
+        # Initial refresh in the background: awaiting it here serializes one
+        # Amazon API round-trip per entity on the platform-setup path (N
+        # devices -> N sequential _api_get_state calls during boot). Deferring
+        # lets all entities be added instantly and refresh concurrently; the
+        # state populates within ~a second instead of blocking setup_entry.
+        self._initial_refresh_task = self.hass.async_create_background_task(
+            self.refresh(self._device),
+            f"{ALEXA_DOMAIN}_initial_refresh_{self._device_serial_number}",
+        )
 
     async def async_will_remove_from_hass(self):
         """Prepare to remove entity."""
-        # Register event handler on bus
+        # Unregister event handler on bus
         self._listener()
+        # Cancel a pending initial refresh so it cannot keep hitting the API
+        # after the entity is removed.
+        task = getattr(self, "_initial_refresh_task", None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                # Cancellation is the intended outcome on entity removal.
+                pass
 
     async def _handle_event(self, event):
         # pylint: disable=too-many-branches,too-many-statements
@@ -530,6 +549,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                         # Synthesize a Bluetooth media session when /api/np/player
                         # does not expose active Bluetooth playback state.
                         _LOGGER.debug("Creating synthesized Bluetooth media session")
+                        self._refresh_generation += 1
                         self._session = {
                             "mediaId": "BluetoothMediaId",
                             "state": None,
@@ -619,6 +639,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                     self._media_duration = None
 
                     # Teardown session tracking and push state back to IDLE
+                    self._refresh_generation += 1
                     self._session = None
                     self._connected_bluetooth = None
                     self._media_player_state = "IDLE"
@@ -829,6 +850,7 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
             self._set_authentication_details(device["auth_info"])
         session = None
         api_call = False
+        refresh_generation = self._refresh_generation
         if self.available:
             _LOGGER.debug(
                 "%s: Refreshing %s",
@@ -917,6 +939,14 @@ class AlexaClient(MediaPlayerEntity, AlexaMedia):
                             #     self if device is None else self._device_name,
                             # )
                             return
+        # A push event may have updated _session/_player_info while the API call
+        # was in flight; keep the newer event data instead of overwriting it
+        # with this (possibly older) response.
+        if session is not None and self._refresh_generation != refresh_generation:
+            _LOGGER.debug(
+                "%s: Skipping stale API result (newer event state)", self.account
+            )
+            return
         self._clear_media_details()
         # update the session if it exists
         self._session = session.get("playerInfo") if session else None

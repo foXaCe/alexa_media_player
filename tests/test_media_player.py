@@ -1157,16 +1157,28 @@ async def test_async_added_to_hass_connects_dispatcher():
     client = _make_client()
     client.hass = MagicMock()
     client.hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {}}}}
-    client.refresh = AsyncMock()
+    refreshed = []
+
+    async def _record_refresh(device):
+        refreshed.append(device)
+
+    client.refresh = AsyncMock(side_effect=_record_refresh)
     listener = MagicMock()
     with patch(
         "custom_components.alexa_media.media_player.async_dispatcher_connect",
         return_value=listener,
     ) as mock_connect:
         await client.async_added_to_hass()
-    client.refresh.assert_awaited_once()
     mock_connect.assert_called_once()
     assert client._listener is listener
+    # The initial refresh is deferred to a background task so the boot path
+    # does not serialize one API round-trip per entity.
+    client.hass.async_create_background_task.assert_called_once()
+    coro = client.hass.async_create_background_task.call_args[0][0]
+    result = await coro
+    assert refreshed == [client._device]
+    assert result is None  # refresh() returns None
+    client.refresh.assert_awaited_once()
 
 
 async def test_async_will_remove_from_hass_disconnects():
