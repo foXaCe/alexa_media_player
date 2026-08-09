@@ -1175,8 +1175,9 @@ async def test_async_added_to_hass_connects_dispatcher():
     # does not serialize one API round-trip per entity.
     client.hass.async_create_background_task.assert_called_once()
     coro = client.hass.async_create_background_task.call_args[0][0]
-    await coro
+    result = await coro
     assert refreshed == [client._device]
+    assert result is None  # refresh() returns None
     client.refresh.assert_awaited_once()
 
 
