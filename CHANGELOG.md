@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Fixed
+
+- Fix `Update for media_player.* fails` (`AttributeError: 'dict' object has no attribute 'device_serial_number'`) introduced in v5.18.8: the lazy `alexa_api` property passed the raw device dict to `AlexaAPI` instead of the client object. The device argument is now stored under `_api_device` (the client instance for media_player/switch, None for alarm) and used at first use.
+
 ## [5.18.8] - 2026-08-09
 
 ### Fixed

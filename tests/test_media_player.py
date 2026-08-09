@@ -1361,3 +1361,23 @@ async def test_handle_event_now_playing_dispatches_to_cluster():
     ) as mock_send:
         await client._handle_event(event)
     mock_send.assert_called_once()
+
+
+# --------------------------------------------------------------------------- #
+# Lazy alexa_api construction (regression: must pass the client, not the dict)
+# --------------------------------------------------------------------------- #
+
+
+def test_alexa_api_lazily_built_with_client_instance():
+    login = MagicMock()
+    login.email = _EMAIL
+    client = AlexaClient({"accountName": "Echo", "serialNumber": "SN1"}, login, 0)
+    assert client._alexa_api is None  # not built at construction
+
+    with patch("custom_components.alexa_media.alexa_media.AlexaAPI") as mock_api:
+        api = client.alexa_api
+        # The device argument must be the client object (which exposes
+        # device_serial_number etc.), NOT the raw device dict.
+        assert mock_api.call_args.args[0] is client
+        assert mock_api.call_args.args[1] is login
+        assert client.alexa_api is api  # cached after first access
