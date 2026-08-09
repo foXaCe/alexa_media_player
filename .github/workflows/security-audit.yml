@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: security-audit-${{ github.ref }}
@@ -27,11 +28,44 @@ jobs:
         with:
           python-version: "3.14"
       - run: pipx install pip-audit
-      - name: Audit manifest.json requirements
+      - name: Audit manifest.json requirements (blocking)
         run: |
-          jq -r '.requirements[]' custom_components/alexa_media/manifest.json > /tmp/reqs.txt
-          # Non-blocking: surfaces CVEs without failing CI on upstream advisories.
-          pip-audit --requirement /tmp/reqs.txt || true
+          jq -r '.requirements[]' custom_components/alexa_media/manifest.json > /tmp/reqs_manifest.txt
+          # BLOCKING: fails the job on high/critical CVEs. Low/medium are
+          # surfaced in the log without breaking CI on upstream advisories.
+          pip-audit --requirement /tmp/reqs_manifest.txt --fail-on=high
+      - name: Audit test/dev requirements (blocking)
+        run: |
+          for r in requirements_test.txt requirements_dev.txt requirements.txt; do
+            if [ -f "$r" ]; then
+              pip-audit --requirement "$r" --fail-on=high
+            fi
+          done
+
+  osv-scanner:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google/osv-scanner-action/osv-scanner-action@v2
+        with:
+          scan-args: |
+            --recursive
+            --skip-git
+            ./
+
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-review:
     name: Dependency review
@@ -40,7 +74,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v5.0.0
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
