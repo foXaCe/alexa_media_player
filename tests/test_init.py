@@ -260,8 +260,7 @@ async def test_async_setup_entry_cookie_path_fails_falls_back_to_login():
         _capture_background_tasks(hass) as scheduled,
     ):
         result = await amp.async_setup_entry(hass, entry)
-        for coro in scheduled:
-            await coro
+        await asyncio.gather(*scheduled)
 
     assert result is True
     # Bootstrap probe raised -> a full credential login is performed (background).
@@ -303,8 +302,7 @@ async def test_async_setup_entry_cookie_bootstrap_success_skips_login():
         _capture_background_tasks(hass) as scheduled,
     ):
         result = await amp.async_setup_entry(hass, entry)
-        for coro in scheduled:
-            await coro
+        await asyncio.gather(*scheduled)
 
     assert result is True
     # Cookie auth confirmed via /api/bootstrap -> no full login.
@@ -331,8 +329,7 @@ async def test_async_setup_entry_recreates_closed_session():
         _capture_background_tasks(hass) as scheduled,
     ):
         result = await amp.async_setup_entry(hass, entry)
-        for coro in scheduled:
-            await coro
+        await asyncio.gather(*scheduled)
 
     assert result is True
     login._create_session.assert_called_once_with(True)
@@ -359,8 +356,7 @@ async def test_async_setup_entry_auth_failure_triggers_reauth_not_exception():
         # Optimistic boot: setup_entry returns True immediately; auth is
         # validated in the background (test_login_status handles the reauth).
         result = await amp.async_setup_entry(hass, entry)
-        for coro in scheduled:
-            await coro
+        await asyncio.gather(*scheduled)
 
     assert result is True
     setup_alexa.assert_not_awaited()
@@ -380,8 +376,7 @@ async def test_async_setup_entry_connection_error_continues_setup():
         _capture_background_tasks(hass) as scheduled,
     ):
         result = await amp.async_setup_entry(hass, entry)
-        for coro in scheduled:
-            await coro
+        await asyncio.gather(*scheduled)
 
     # No ConfigEntryNotReady: the entry is already loaded optimistically and the
     # background probe degrades to a best-effort setup (coordinator retries).
@@ -424,8 +419,7 @@ async def test_async_setup_entry_listener_callbacks_execute():
     ):
         result = await amp.async_setup_entry(hass, entry)
         assert result is True
-        for coro in scheduled:
-            await coro  # background login probe + initial setup_alexa
+        await asyncio.gather(*scheduled)  # background login probe + initial setup_alexa
 
         once = {c.args[0]: c.args[1] for c in hass.bus.async_listen_once.call_args_list}
         listen = {c.args[0]: c.args[1] for c in hass.bus.async_listen.call_args_list}
