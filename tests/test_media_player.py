@@ -850,6 +850,27 @@ async def test_refresh_offline_clears_media():
     assert client._session is None
 
 
+async def test_refresh_degrades_to_metadata_when_not_authenticated():
+    client = _make_client()
+    client._last_called = True  # avoid notify path
+    client.hass = MagicMock()
+    client.hass.data = {
+        DATA_ALEXAMEDIA: {
+            "accounts": {_EMAIL: {"last_called": {"serialNumber": "SN1"}}}
+        }
+    }
+    client.schedule_update_ha_state = MagicMock()
+    # Optimistic boot: session not authenticated yet -> the API call must be
+    # skipped (it would redirect to /ap/signin) but device metadata still lands.
+    client._login.status = {"login_successful": False}
+    client._api_get_state = AsyncMock(return_value={"playerInfo": {"state": "PLAYING"}})
+    await client.refresh(_device_dict(), skip_api=False)
+    assert client._device_name == "Office"
+    assert client._available is True
+    client._api_get_state.assert_not_awaited()
+    client.schedule_update_ha_state.assert_called()
+
+
 @patch(_HTTP2, return_value=True)
 async def test_refresh_builds_session_from_player_info(_mock_http2):
     client = _make_client()
@@ -1157,6 +1178,8 @@ async def test_async_added_to_hass_connects_dispatcher():
     client = _make_client()
     client.hass = MagicMock()
     client.hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {}}}}
+    # Authenticated session -> the initial refresh is deferred in background.
+    client._login.status = {"login_successful": True}
     refreshed = []
 
     async def _record_refresh(device):
@@ -1179,6 +1202,27 @@ async def test_async_added_to_hass_connects_dispatcher():
     assert refreshed == [client._device]
     assert result is None  # refresh() returns None
     client.refresh.assert_awaited_once()
+
+
+async def test_async_added_to_hass_skips_refresh_when_not_authenticated():
+    client = _make_client()
+    client.hass = MagicMock()
+    client.hass.data = {DATA_ALEXAMEDIA: {"accounts": {_EMAIL: {}}}}
+    # Optimistic boot: the login probe still runs in the background, so the
+    # entity must NOT hit an unauthenticated session (would redirect to
+    # /ap/signin). The coordinator's post-login refresh populates state.
+    client._login.status = {"login_successful": False}
+    client.refresh = AsyncMock()
+    listener = MagicMock()
+    with patch(
+        "custom_components.alexa_media.media_player.async_dispatcher_connect",
+        return_value=listener,
+    ) as mock_connect:
+        await client.async_added_to_hass()
+    mock_connect.assert_called_once()
+    assert client._listener is listener
+    client.hass.async_create_background_task.assert_not_called()
+    client.refresh.assert_not_awaited()
 
 
 async def test_async_will_remove_from_hass_disconnects():

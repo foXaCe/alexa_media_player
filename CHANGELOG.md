@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Fixed
+
+- Media-player refreshes no longer hit the Amazon API while the session is not yet authenticated during the optimistic boot. Previously, with the snapshot restored before the login probe, `init()`/`async_update()` fell through to `_api_get_state` (a latent `skip_api and self.hass` bug — `self.hass` is `None` at `init` time) and every call redirected to `/ap/signin` (csrf missing), wasting ~1.5-2s of failed round-trips on the platform-setup path. `refresh()` now degrades to a metadata-only update until `login.status["login_successful"]` is confirmed, and `async_added_to_hass` only defers a refresh for an already-authenticated session. On a slow-WAN install this removes the failed pre-login calls.
+
 ## [5.18.4] - 2026-08-09
 
 ### Changed
