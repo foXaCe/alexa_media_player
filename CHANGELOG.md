@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Fixed
+
+- No more spurious `AlexaLogin session is missing required token: 'csrf'` warnings at boot: `AlexaAPI` handles are now built lazily (on first use) instead of in the entity constructor. During the optimistic boot entities are created before the login probe completes, so the eager construction warned for every entity; the API is only used once the session is authenticated (already gated in `refresh()`).
+
 ## [5.18.7] - 2026-08-09
 
 ### Changed
