@@ -1,10 +1,14 @@
 # CHANGELOG
 
-## [Unreleased]
+## [5.18.3] - 2026-08-09
 
 ### Changed
 
-- Faster config-entry setup (measured `setup_entry` 4.15s → ~1.9s on HA dev, ~55%): the initial per-entity refresh in `AlexaClient.async_added_to_hass` no longer awaits one Amazon API round-trip per media player on the platform-setup path. It now runs in a background task, so all entities are added instantly and refresh concurrently; media-player state populates ~1s later instead of blocking boot.
+- Faster config-entry setup (measured `setup_entry` 4.15s → ~1.9s on HA dev, ~55%): the initial per-entity refresh in `AlexaClient.async_added_to_hass` no longer awaits one Amazon API round-trip per media player on the platform-setup path. It now runs in a background task, so all entities are added instantly and refresh concurrently; media-player state populates ~1s later instead of blocking boot. The pending initial refresh is cancelled on entity removal, and a generation guard prevents a stale API response from overwriting newer push-event state.
+
+### Security
+
+- The security audit is now a blocking gate (pip-audit on the integration's runtime dependencies, OSV-Scanner, Gitleaks) instead of a non-blocking `|| true` check. Raised the transitive dependency floor `requests>=2.33.0` in the manifest, fixing PYSEC-2026-1873 / PYSEC-2026-2275 inherited through alexapy.
 
 ## [5.18.2] - 2026-07-30
 
