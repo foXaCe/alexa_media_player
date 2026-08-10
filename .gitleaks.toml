@@ -1,0 +1,10 @@
+# Extends the default gitleaks config.
+# tests/test_helpers.py intentionally embeds synthetic OAuth credentials and a
+# truncated RSA PKCS#8 prefix (fake value) to prove the redaction logic masks
+# them; these are not real secrets and are flagged by gitleaks' heuristics.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic OAuth/RSA test fixtures in the redaction unit tests"
+paths = ["tests/test_helpers.py"]
