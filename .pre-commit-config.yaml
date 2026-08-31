@@ -3,7 +3,7 @@ minimum_pre_commit_version: 3.0.0
 repos:
   # --- Ruff (lint + format, replaces black / isort / flake8 / pyupgrade) ---
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.2
+    rev: v0.16.5
     hooks:
       - id: ruff
         args: [--fix]
@@ -35,7 +35,7 @@ repos:
 
   # --- Commit message linting ---
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.17.0
+    rev: v4.18.0
     hooks:
       - id: commitizen
         stages: ["commit-msg"]
