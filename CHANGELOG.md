@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [5.18.10] - 2026-08-31
+
+### Fixed
+
+- `AlexaMediaSwitch.device_info` no longer declares a `via_device` tuple identical to its own `identifiers`, which made the device its own parent in the device registry and triggered Home Assistant's deprecation warning about `via_device` (`use via_device_id instead`). Switch entities already attach to the Echo device through the identifiers shared with the `media_player` device info, so the key is dropped rather than converted.
+
 ## [5.18.9] - 2026-08-09
 
 ### Fixed
