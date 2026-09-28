@@ -54,9 +54,13 @@ jobs:
           jq -r '.requirements[]' custom_components/alexa_media/manifest.json > /tmp/osv-scan/requirements.txt
           # Transitive CVE floors: alexapy allows aiohttp<4.0.0 (HA ships >=3.14);
           # idna is aiohttp's own dependency (< 3.15 → PYSEC-2026-215).
+          # anyio is pulled in via aiohttp's test extras and via HA's own
+          # requirements; 4.9.0 is affected by GHSA-5p39-cfhj-2xmp (9.3) and
+          # GHSA-82r6-8w77-94w6 (6.8), fixed in 4.14.2.
           cat >> /tmp/osv-scan/requirements.txt <<'EOF'
           aiohttp>=3.14.3
           idna>=3.15
+          anyio>=4.14.2
           EOF
           /tmp/osv-scanner scan --recursive /tmp/osv-scan
 
