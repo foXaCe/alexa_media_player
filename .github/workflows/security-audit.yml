@@ -57,10 +57,14 @@ jobs:
           # anyio is pulled in via aiohttp's test extras and via HA's own
           # requirements; 4.9.0 is affected by GHSA-5p39-cfhj-2xmp (9.3) and
           # GHSA-82r6-8w77-94w6 (6.8), fixed in 4.14.2.
+          # requests is declared unbounded by alexapy, so osv resolves the
+          # floor (2.9.2) — 5 CVEs there are only fixed from 2.33.0
+          # (GHSA-gc5v-m9x4-r6x2 and earlier).
           cat >> /tmp/osv-scan/requirements.txt <<'EOF'
           aiohttp>=3.14.3
           idna>=3.15
           anyio>=4.14.2
+          requests>=2.33.0
           EOF
           /tmp/osv-scanner scan --recursive /tmp/osv-scan
 
