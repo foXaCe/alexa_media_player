@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [5.18.11] - 2026-10-29
+
+### Fixed
+
+- No more deprecation warning about `CONN_CLASS_CLOUD_POLL` at startup: the config flow no longer declares the obsolete `CONNECTION_CLASS` (the constant goes away in Home Assistant 2027.5).
+
+### Changed
+
+- `alexapy` updated to 1.33.0.
+
 ## [5.18.10] - 2026-08-31
 
 ### Fixed
