@@ -117,7 +117,6 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
 
     VERSION = CONFIG_VERSION
 
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
     proxy: AlexaProxy = None
     proxy_view: AlexaMediaAuthorizationProxyView = None
 
