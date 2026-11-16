@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [5.18.13] - 2026-11-16
+
+### Changed
+
+- `alexapy` updated to 1.36.0.
+
 ## [5.18.12] - 2026-11-13
 
 ### Changed
